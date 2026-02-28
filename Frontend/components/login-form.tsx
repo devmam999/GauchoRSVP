@@ -34,8 +34,8 @@ export function LoginForm() {
     await new Promise((resolve) => setTimeout(resolve, 400));
     setIsSubmitting(false);
 
-    // TODO: Redirect to dashboard or home after successful login
-    router.push("/");
+    // TODO: Redirect to dashboard after backend validates session
+    router.push("/dashboard");
   }
 
   return (
