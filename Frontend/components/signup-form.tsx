@@ -12,27 +12,64 @@ export function SignupForm() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: "",
     username: "",
     password: "",
   });
 
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_CONVEX_HTTP_URL?.replace(/\/$/, "") ?? "";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setIsSubmitting(true);
+    setError(null);
 
-    // TODO: Replace with actual backend signup API call
-    // Example: const res = await fetch('/api/auth/signup', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(formData),
-    // });
+    if (!apiBaseUrl) {
+      setIsSubmitting(false);
+      setError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
+      return;
+    }
 
-    // Simulate a brief delay for UX
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    setIsSubmitting(false);
-    router.push("/signup/preferences");
+    try {
+      const res = await fetch(`${apiBaseUrl}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "local",
+          email: formData.email,
+          username: formData.username,
+          password: formData.password,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Signup failed.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      setIsSubmitting(false);
+      router.push("/dashboard");
+    } catch {
+      setIsSubmitting(false);
+      setError("Unable to reach backend. Please try again.");
+    }
+  }
+
+  async function handleGoogleSignup() {
+    setError(null);
+    setIsSubmitting(true);
+
+    if (!apiBaseUrl) {
+      setIsSubmitting(false);
+      setError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
+      return;
+    }
+
+    window.location.href = `${apiBaseUrl}/signup?provider=google`;
   }
 
   return (
@@ -121,10 +158,9 @@ export function SignupForm() {
           <Button
             type="button"
             variant="outline"
-            className="h-12 flex-1 gap-2 rounded-full border-border bg-foreground text-background hover:bg-foreground/90 hover:text-background"
-            onClick={() => {
-              // TODO: Implement Google OAuth
-            }}
+            className="h-12 flex-1 cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background disabled:cursor-not-allowed"
+            onClick={handleGoogleSignup}
+            disabled={isSubmitting}
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -150,7 +186,7 @@ export function SignupForm() {
           <Button
             type="button"
             variant="outline"
-            className="h-12 flex-1 gap-2 rounded-full border-border bg-foreground text-background hover:bg-foreground/90 hover:text-background"
+            className="h-12 flex-1 cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background"
             onClick={() => {
               // TODO: Implement UCSB NetID SSO
             }}
@@ -176,7 +212,7 @@ export function SignupForm() {
       <Button
         type="submit"
         disabled={isSubmitting}
-        className="group mt-2 h-12 rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 disabled:opacity-70"
+        className="group mt-2 h-12 cursor-pointer rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? (
           <span className="flex items-center gap-2">
@@ -190,6 +226,10 @@ export function SignupForm() {
           </span>
         )}
       </Button>
+
+      {error ? (
+        <p className="text-center text-sm text-red-500">{error}</p>
+      ) : null}
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
