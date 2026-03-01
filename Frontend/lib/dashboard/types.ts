@@ -78,3 +78,20 @@ export const FOOD_OPTIONS: { value: "any" | "free" | "costs-extra"; label: strin
   { value: "free", label: "Free" },
   { value: "costs-extra", label: "Costs extra" },
 ];
+
+/** Friend type for Friends page. Replace with API type when backend is ready. */
+export interface Friend {
+  id: string;
+  name: string;
+  /** Optional profile image URL; use AvatarFallback with initials if missing */
+  profileImageUrl?: string;
+  /** Event ids this friend is attending (references CampusEvent.id) */
+  eventIds: string[];
+}
+
+/** Registered Gaucho RSVP profile (searchable for add friend). Replace with API when backend is ready. */
+export interface RegisteredProfile {
+  id: string;
+  name: string;
+  profileImageUrl?: string;
+}
