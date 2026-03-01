@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MapPin, Users } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { DUMMY_USER_PROFILE } from "@/lib/dashboard/dummy-profile";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: MapPin },
@@ -12,6 +14,14 @@ const navItems = [
 
 export function DashboardHeader() {
   const pathname = usePathname();
+  const initials = DUMMY_USER_PROFILE.name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const onProfilePage = pathname.startsWith("/dashboard/profile");
 
   return (
     <header className="flex w-full items-center justify-between gap-4 border-b border-border bg-background px-4 py-3 sm:px-6">
@@ -28,32 +38,43 @@ export function DashboardHeader() {
         </span>
       </Link>
 
-      <nav className="flex items-center gap-1 sm:gap-2" aria-label="Dashboard navigation">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const isActive = pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors sm:px-4 md:text-sm",
-                isActive
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </Link>
-          );
-        })}
-        {/* Placeholder: replace with real user menu when backend auth is ready */}
-        <div
-          className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-medium text-muted-foreground sm:h-9 sm:w-9"
-          aria-label="User menu (placeholder)"
-        >
-          ?
+      <nav className="flex items-center gap-2 sm:gap-3" aria-label="Dashboard navigation">
+        <div className="flex items-center gap-1 sm:gap-2">
+          {navItems.map(({ href, label, icon: Icon }) => {
+            const isActive = pathname === href;
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors sm:px-4 md:text-sm",
+                  isActive
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </Link>
+            );
+          })}
         </div>
+
+        <Link
+          href="/dashboard/profile"
+          className={cn(
+            "ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-medium sm:h-9 sm:w-9",
+            onProfilePage && "border-primary ring-2 ring-primary/40"
+          )}
+          aria-label="Open profile"
+        >
+          <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
+            <AvatarImage src={DUMMY_USER_PROFILE.profileImageUrl} alt={DUMMY_USER_PROFILE.name} />
+            <AvatarFallback className="text-xs font-semibold text-primary-foreground bg-primary sm:text-sm">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+        </Link>
       </nav>
     </header>
   );
