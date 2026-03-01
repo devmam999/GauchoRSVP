@@ -68,7 +68,7 @@ What this does:
 Create/update `Frontend/.env.local`:
 
 ```env
-NEXT_PUBLIC_CONVEX_HTTP_URL=https://acrobatic-magpie-750.convex.site
+NEXT_PUBLIC_CONVEX_HTTP_URL=<your-convex-database-link-here>
 ```
 
 This is the base URL used by frontend auth requests (for `/signup`, `/login`, `/users`).
@@ -107,10 +107,10 @@ npx convex env list
 
 ## Google OAuth Redirect URI
 
-In Google Cloud OAuth client settings, add this Authorized redirect URI:
+In Google Cloud OAuth client settings, add an Authorized redirect URI:
 
 ```text
-https://acrobatic-magpie-750.convex.site/oauth/google/callback
+<your-convex-database-link-here>
 ```
 
 If your Convex deployment URL changes, update both:
