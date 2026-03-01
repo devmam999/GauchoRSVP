@@ -138,3 +138,34 @@
 .animate-fade-in {
   animation: fade-in 0.8s ease-out both;
 }
+
+/* Leaflet map: keep controls readable and match app theme */
+.leaflet-container {
+  font-family: var(--font-sans);
+}
+.leaflet-control-attribution a {
+  color: oklch(0.65 0 0);
+}
+.leaflet-control-attribution a:hover {
+  color: oklch(0.85 0 0);
+}
+
+/* Event popup content: use app colors inside Leaflet popup */
+.leaflet-popup-content-wrapper {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.leaflet-popup-tip {
+  background: var(--card);
+}
+.leaflet-popup-content {
+  margin: 0.75rem 1rem;
+  min-width: 0;
+}
+
+/* Event popup title: primary color for contrast (popup may render outside main tree) */
+.leaflet-popup-content h3 {
+  color: var(--primary);
+}
