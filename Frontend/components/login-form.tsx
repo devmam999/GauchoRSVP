@@ -12,30 +12,62 @@ export function LoginForm() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     identifier: "",
     password: "",
   });
 
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_CONVEX_HTTP_URL?.replace(/\/$/, "") ?? "";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setIsSubmitting(true);
+    setError(null);
 
-    // TODO: Replace with actual backend login API call
-    // Example:
-    // const res = await fetch('/api/auth/login', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(formData),
-    // });
-    // const data = await res.json();
-    // if (!res.ok) { setError(data.message); setIsSubmitting(false); return; }
+    if (!apiBaseUrl) {
+      setIsSubmitting(false);
+      setError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
+      return;
+    }
 
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    setIsSubmitting(false);
+    try {
+      const res = await fetch(`${apiBaseUrl}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "local",
+          identifier: formData.identifier,
+          password: formData.password,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Login failed.");
+        setIsSubmitting(false);
+        return;
+      }
 
-    // TODO: Redirect to dashboard after backend validates session
-    router.push("/dashboard");
+      setIsSubmitting(false);
+      router.push("/dashboard");
+    } catch {
+      setIsSubmitting(false);
+      setError("Unable to reach backend. Please try again.");
+    }
+  }
+
+  async function handleGoogleLogin() {
+    setError(null);
+    setIsSubmitting(true);
+
+    if (!apiBaseUrl) {
+      setIsSubmitting(false);
+      setError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
+      return;
+    }
+
+    window.location.href = `${apiBaseUrl}/login?provider=google`;
   }
 
   return (
@@ -104,10 +136,9 @@ export function LoginForm() {
           <Button
             type="button"
             variant="outline"
-            className="h-12 flex-1 gap-2 rounded-full border-border bg-foreground text-background hover:bg-foreground/90 hover:text-background"
-            onClick={() => {
-              // TODO: Implement Google OAuth login
-            }}
+            className="h-12 flex-1 cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background disabled:cursor-not-allowed"
+            onClick={handleGoogleLogin}
+            disabled={isSubmitting}
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -133,7 +164,7 @@ export function LoginForm() {
           <Button
             type="button"
             variant="outline"
-            className="h-12 flex-1 gap-2 rounded-full border-border bg-foreground text-background hover:bg-foreground/90 hover:text-background"
+            className="h-12 flex-1 cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background"
             onClick={() => {
               // TODO: Implement UCSB NetID SSO login
             }}
@@ -159,7 +190,7 @@ export function LoginForm() {
       <Button
         type="submit"
         disabled={isSubmitting}
-        className="group mt-2 h-12 rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 disabled:opacity-70"
+        className="group mt-2 h-12 cursor-pointer rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? (
           <span className="flex items-center gap-2">
@@ -173,6 +204,10 @@ export function LoginForm() {
           </span>
         )}
       </Button>
+
+      {error ? (
+        <p className="text-center text-sm text-red-500">{error}</p>
+      ) : null}
 
       <p className="text-center text-sm text-muted-foreground">
         {"Don't have an account? "}
