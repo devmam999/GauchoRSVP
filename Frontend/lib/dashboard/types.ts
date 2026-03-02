@@ -95,3 +95,22 @@ export interface RegisteredProfile {
   name: string;
   profileImageUrl?: string;
 }
+
+/** User profile for the logged-in user. Replace with API type when backend is ready. */
+export interface UserProfile {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  profileImageUrl?: string;
+  major?: string;
+  year?: string;
+  bio?: string;
+  homeBase?: string;
+  preferredEventTypes: EventCategory[];
+  notificationPreferences: {
+    emailEvents: boolean;
+    emailReminders: boolean;
+    emailFriendActivity: boolean;
+  };
+}
