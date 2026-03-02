@@ -52,11 +52,29 @@ export default defineSchema({
     type: v.union(
       v.literal("friend_request"),
       v.literal("friend_request_accepted"),
-      v.literal("friend_request_rejected")
+      v.literal("friend_request_rejected"),
+      v.literal("message_received")
     ),
     message: v.string(),
     requestId: v.optional(v.string()),
     read: v.boolean(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
+  messages: defineTable({
+    senderId: v.string(),
+    recipientId: v.string(),
+    text: v.optional(v.string()),
+    imageStorageId: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_sender", ["senderId"])
+    .index("by_recipient", ["recipientId"]),
+  blocks: defineTable({
+    blockerId: v.string(),
+    blockedId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_blocker", ["blockerId"])
+    .index("by_blocked", ["blockedId"]),
 });

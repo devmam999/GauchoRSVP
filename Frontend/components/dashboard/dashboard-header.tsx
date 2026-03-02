@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { MapPin, Users } from "lucide-react";
+import { MapPin, MessageSquare, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { DUMMY_USER_PROFILE } from "@/lib/dashboard/dummy-profile";
@@ -12,6 +12,7 @@ import { getCurrentUser, saveCurrentUser } from "@/lib/auth/current-user";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: MapPin },
   { href: "/dashboard/friends", label: "Friends", icon: Users },
+  { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
 ] as const;
 
 export function DashboardHeader() {

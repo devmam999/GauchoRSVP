@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ErrorNotice } from "@/components/ui/error-notice";
 import { clearCurrentUser, getCurrentUser } from "@/lib/auth/current-user";
 import { EVENT_CATEGORIES, type UserProfile } from "@/lib/dashboard/types";
 
@@ -98,8 +99,13 @@ export default function ProfileClient() {
   if (loadError) {
     return (
       <main className="flex-1 px-4 py-6 sm:px-6">
-        <div className="mx-auto max-w-4xl rounded-xl border border-border bg-card px-4 py-10 text-center text-sm text-red-500">
-          {loadError}
+        <div className="mx-auto max-w-4xl">
+          <ErrorNotice
+            title="Profile load issue"
+            message={loadError}
+            onDismiss={() => setLoadError(null)}
+            className="px-4 py-4"
+          />
         </div>
       </main>
     );

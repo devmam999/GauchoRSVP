@@ -215,6 +215,30 @@ http.route({
 });
 
 http.route({
+  path: "/message",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/messageIMG",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/block",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/blcok",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
   path: "/signup",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
@@ -774,6 +798,246 @@ http.route({
       { error: "Unsupported action. Use mark_read_all or delete." },
       400
     );
+  }),
+});
+
+http.route({
+  path: "/message",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const requestUrl = new URL(request.url);
+    const userId = requestUrl.searchParams.get("userId");
+    const otherUserId = requestUrl.searchParams.get("otherUserId");
+    if (!userId) {
+      return jsonResponse({ error: "userId is required." }, 400);
+    }
+
+    try {
+      if (otherUserId) {
+        const messages = await ctx.runQuery(internal.auth.getConversation, {
+          userId,
+          otherUserId,
+        });
+        return jsonResponse({ messages });
+      }
+
+      const threads = await ctx.runQuery(internal.auth.listMessageThreads, {
+        userId,
+      });
+      return jsonResponse({ threads });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not load messages.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/message",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: JsonRecord;
+    try {
+      body = (await request.json()) as JsonRecord;
+    } catch {
+      return jsonResponse({ error: "Invalid JSON payload." }, 400);
+    }
+
+    const senderId = parseStringField(body, "senderId");
+    const recipientId = parseStringField(body, "recipientId");
+    const text = parseStringField(body, "text");
+    if (!senderId || !recipientId) {
+      return jsonResponse({ error: "senderId and recipientId are required." }, 400);
+    }
+    if (!text) {
+      return jsonResponse({ error: "text is required." }, 400);
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.auth.sendMessage, {
+        senderId,
+        recipientId,
+        text,
+      });
+
+      const sender = await ctx.runQuery(internal.auth.getUserById, { userId: senderId });
+      const recipient = await ctx.runQuery(internal.auth.getUserById, {
+        userId: recipientId,
+      });
+      if (sender && recipient && recipient.emailVerified) {
+        await sendEmail({
+          to: recipient.email,
+          subject: `New message from ${sender.username}`,
+          text: `${sender.username} sent you a new message on Gaucho RSVP: "${text}"`,
+          html: `<p><strong>${sender.username}</strong> sent you a new message on Gaucho RSVP:</p><p>${text}</p>`,
+        });
+      }
+
+      return jsonResponse({ message: "Message sent.", messageId: result.messageId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not send message.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/messageIMG",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const formData = await request.formData();
+    const senderIdValue = formData.get("senderId");
+    const recipientIdValue = formData.get("recipientId");
+    const textValue = formData.get("text");
+    const imageValue = formData.get("image");
+
+    const senderId =
+      typeof senderIdValue === "string" && senderIdValue.trim().length > 0
+        ? senderIdValue.trim()
+        : null;
+    const recipientId =
+      typeof recipientIdValue === "string" && recipientIdValue.trim().length > 0
+        ? recipientIdValue.trim()
+        : null;
+    const text =
+      typeof textValue === "string" && textValue.trim().length > 0 ? textValue.trim() : undefined;
+
+    if (!senderId || !recipientId) {
+      return jsonResponse({ error: "senderId and recipientId are required." }, 400);
+    }
+    if (!(imageValue instanceof Blob)) {
+      return jsonResponse({ error: "image file is required." }, 400);
+    }
+
+    try {
+      const storageId = await ctx.storage.store(imageValue);
+      const imageUrl = await ctx.storage.getUrl(storageId);
+      const result = await ctx.runMutation(internal.auth.sendMessage, {
+        senderId,
+        recipientId,
+        text,
+        imageStorageId: String(storageId),
+        imageUrl: imageUrl ?? undefined,
+      });
+
+      const sender = await ctx.runQuery(internal.auth.getUserById, { userId: senderId });
+      const recipient = await ctx.runQuery(internal.auth.getUserById, {
+        userId: recipientId,
+      });
+      if (sender && recipient && recipient.emailVerified) {
+        await sendEmail({
+          to: recipient.email,
+          subject: `New image message from ${sender.username}`,
+          text: `${sender.username} sent you an image message on Gaucho RSVP.`,
+          html: `<p><strong>${sender.username}</strong> sent you an image message on Gaucho RSVP.</p>`,
+        });
+      }
+
+      return jsonResponse({
+        message: "Image message sent.",
+        messageId: result.messageId,
+        imageUrl: imageUrl ?? null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not send image message.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/block",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const userId = new URL(request.url).searchParams.get("userId");
+    if (!userId) {
+      return jsonResponse({ error: "userId is required." }, 400);
+    }
+
+    const blocked = await ctx.runQuery(internal.auth.listBlockedUsers, { userId });
+    return jsonResponse({ blocked });
+  }),
+});
+
+http.route({
+  path: "/block",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: JsonRecord;
+    try {
+      body = (await request.json()) as JsonRecord;
+    } catch {
+      return jsonResponse({ error: "Invalid JSON payload." }, 400);
+    }
+
+    const action = parseStringField(body, "action");
+    const blockerId = parseStringField(body, "blockerId");
+    const blockedId = parseStringField(body, "blockedId");
+    if (!action || !blockerId || !blockedId) {
+      return jsonResponse({ error: "action, blockerId, and blockedId are required." }, 400);
+    }
+
+    try {
+      if (action === "block") {
+        const result = await ctx.runMutation(internal.auth.blockUser, { blockerId, blockedId });
+        return jsonResponse({ message: "User blocked.", status: result.status });
+      }
+      if (action === "unblock") {
+        const result = await ctx.runMutation(internal.auth.unblockUser, {
+          blockerId,
+          blockedId,
+        });
+        return jsonResponse({ message: "User unblocked.", status: result.status });
+      }
+      return jsonResponse({ error: "Unsupported action. Use block or unblock." }, 400);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update block list.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/blcok",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const userId = new URL(request.url).searchParams.get("userId");
+    if (!userId) {
+      return jsonResponse({ error: "userId is required." }, 400);
+    }
+    const blocked = await ctx.runQuery(internal.auth.listBlockedUsers, { userId });
+    return jsonResponse({ blocked });
+  }),
+});
+
+http.route({
+  path: "/blcok",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: JsonRecord;
+    try {
+      body = (await request.json()) as JsonRecord;
+    } catch {
+      return jsonResponse({ error: "Invalid JSON payload." }, 400);
+    }
+    const action = parseStringField(body, "action");
+    const blockerId = parseStringField(body, "blockerId");
+    const blockedId = parseStringField(body, "blockedId");
+    if (!action || !blockerId || !blockedId) {
+      return jsonResponse({ error: "action, blockerId, and blockedId are required." }, 400);
+    }
+    if (action === "block") {
+      const result = await ctx.runMutation(internal.auth.blockUser, { blockerId, blockedId });
+      return jsonResponse({ message: "User blocked.", status: result.status });
+    }
+    if (action === "unblock") {
+      const result = await ctx.runMutation(internal.auth.unblockUser, {
+        blockerId,
+        blockedId,
+      });
+      return jsonResponse({ message: "User unblocked.", status: result.status });
+    }
+    return jsonResponse({ error: "Unsupported action. Use block or unblock." }, 400);
   }),
 });
 

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AddFriendSearch } from "@/components/dashboard/add-friend-search";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { EventCard } from "@/components/dashboard/event-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ErrorNotice } from "@/components/ui/error-notice";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { DUMMY_MY_RSVPED_EVENT_IDS } from "@/lib/dashboard/dummy-friends";
@@ -26,12 +28,14 @@ function getInitials(name: string): string {
 function FriendCard({
   friend,
   isBlocked,
+  onMessage,
   onBlock,
   onUnblock,
   onUnfriend,
 }: {
   friend: Friend;
   isBlocked: boolean;
+  onMessage: () => void;
   onBlock: () => void;
   onUnblock: () => void;
   onUnfriend: () => void;
@@ -85,9 +89,7 @@ function FriendCard({
                 variant="outline"
                 size="sm"
                 className="gap-1.5 rounded-full border-border transition-all duration-200 hover:scale-105"
-                onClick={() => {
-                  /* TODO: open message thread when backend ready */
-                }}
+                onClick={onMessage}
               >
                 <MessageCircle className="h-3.5 w-3.5" />
                 Message
@@ -140,6 +142,7 @@ function FriendCard({
 }
 
 export default function FriendsPage() {
+  const router = useRouter();
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_CONVEX_HTTP_URL?.replace(/\/$/, "") ?? "";
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -181,7 +184,7 @@ export default function FriendsPage() {
         setProfilesLoading(true);
         setProfilesError(null);
 
-        const [usersRes, friendRes, notificationsRes] = await Promise.all([
+        const [usersRes, friendRes, notificationsRes, blockedRes] = await Promise.all([
           fetch(`${apiBaseUrl}/friends/registered-users`),
           fetch(`${apiBaseUrl}/friend?userId=${encodeURIComponent(activeUserId)}`),
           fetch(
@@ -189,6 +192,7 @@ export default function FriendsPage() {
               activeUserId
             )}`
           ),
+          fetch(`${apiBaseUrl}/block?userId=${encodeURIComponent(activeUserId)}`),
         ]);
 
         const usersPayload = (await usersRes.json()) as {
@@ -214,6 +218,10 @@ export default function FriendsPage() {
           }>;
           error?: string;
         };
+        const blockedPayload = (await blockedRes.json()) as {
+          blocked?: Array<{ blockedId: string }>;
+          error?: string;
+        };
 
         if (!usersRes.ok) {
           throw new Error(usersPayload.error ?? "Could not fetch users.");
@@ -225,6 +233,9 @@ export default function FriendsPage() {
           throw new Error(
             notificationsPayload.error ?? "Could not fetch notifications."
           );
+        }
+        if (!blockedRes.ok) {
+          throw new Error(blockedPayload.error ?? "Could not fetch blocked users.");
         }
 
         if (!isMounted) return;
@@ -249,6 +260,7 @@ export default function FriendsPage() {
         setOutgoingRequestUserIds(
           new Set(friendPayload.outgoingRequestUserIds ?? [])
         );
+        setBlockedIds(new Set((blockedPayload.blocked ?? []).map((entry) => entry.blockedId)));
         const loadedNotifications = notificationsPayload.notifications ?? [];
         setNotifications(loadedNotifications);
 
@@ -291,11 +303,37 @@ export default function FriendsPage() {
   const activeFriends = allFriends.filter((f) => !blockedIds.has(f.id));
   const blockedFriends = allFriends.filter((f) => blockedIds.has(f.id));
 
-  const handleBlock = (friendId: string) => {
+  const handleBlock = async (friendId: string) => {
+    if (!apiBaseUrl || !currentUserId) return;
+    const res = await fetch(`${apiBaseUrl}/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "block",
+        blockerId: currentUserId,
+        blockedId: friendId,
+      }),
+    });
+    if (!res.ok) {
+      return;
+    }
     setBlockedIds((prev) => new Set(prev).add(friendId));
   };
 
-  const handleUnblock = (friendId: string) => {
+  const handleUnblock = async (friendId: string) => {
+    if (!apiBaseUrl || !currentUserId) return;
+    const res = await fetch(`${apiBaseUrl}/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "unblock",
+        blockerId: currentUserId,
+        blockedId: friendId,
+      }),
+    });
+    if (!res.ok) {
+      return;
+    }
     setBlockedIds((prev) => {
       const next = new Set(prev);
       next.delete(friendId);
@@ -445,7 +483,12 @@ export default function FriendsPage() {
             </p>
           ) : null}
           {profilesError ? (
-            <p className="mt-2 text-sm text-red-500">{profilesError}</p>
+            <ErrorNotice
+              className="mt-2"
+              title="Friends page issue"
+              message={profilesError}
+              onDismiss={() => setProfilesError(null)}
+            />
           ) : null}
         </section>
 
@@ -508,6 +551,7 @@ export default function FriendsPage() {
                       key={friend.id}
                       friend={friend}
                       isBlocked={false}
+                      onMessage={() => router.push(`/dashboard/messages?userId=${friend.id}`)}
                       onBlock={() => handleBlock(friend.id)}
                       onUnblock={() => handleUnblock(friend.id)}
                       onUnfriend={() => handleUnfriend(friend.id)}
@@ -529,6 +573,7 @@ export default function FriendsPage() {
                       key={friend.id}
                       friend={friend}
                       isBlocked
+                      onMessage={() => router.push(`/dashboard/messages?userId=${friend.id}`)}
                       onBlock={() => handleBlock(friend.id)}
                       onUnblock={() => handleUnblock(friend.id)}
                       onUnfriend={() => handleUnfriend(friend.id)}

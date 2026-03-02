@@ -574,3 +574,206 @@ export const deleteNotification = internalMutation({
     await ctx.db.delete(notification._id);
   },
 });
+
+export const sendMessage = internalMutation({
+  args: {
+    senderId: v.string(),
+    recipientId: v.string(),
+    text: v.optional(v.string()),
+    imageStorageId: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.senderId === args.recipientId) {
+      throw new Error("You cannot message yourself.");
+    }
+
+    const senderBlocks = await ctx.db
+      .query("blocks")
+      .withIndex("by_blocker", (q) => q.eq("blockerId", args.senderId))
+      .collect();
+    if (senderBlocks.some((entry) => entry.blockedId === args.recipientId)) {
+      throw new Error("You blocked this user. Unblock them before messaging.");
+    }
+
+    const recipientBlocks = await ctx.db
+      .query("blocks")
+      .withIndex("by_blocker", (q) => q.eq("blockerId", args.recipientId))
+      .collect();
+    if (recipientBlocks.some((entry) => entry.blockedId === args.senderId)) {
+      throw new Error("You cannot message this user.");
+    }
+
+    const trimmedText = args.text?.trim();
+    if (!trimmedText && !args.imageUrl) {
+      throw new Error("Message text or image is required.");
+    }
+
+    const messageId = await ctx.db.insert("messages", {
+      senderId: args.senderId,
+      recipientId: args.recipientId,
+      text: trimmedText || undefined,
+      imageStorageId: args.imageStorageId,
+      imageUrl: args.imageUrl,
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.insert("notifications", {
+      userId: args.recipientId,
+      actorId: args.senderId,
+      type: "message_received",
+      message: "You received a new message.",
+      read: false,
+      createdAt: Date.now(),
+    });
+
+    return { messageId };
+  },
+});
+
+export const listMessageThreads = internalQuery({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const sent = await ctx.db
+      .query("messages")
+      .withIndex("by_sender", (q) => q.eq("senderId", args.userId))
+      .collect();
+    const received = await ctx.db
+      .query("messages")
+      .withIndex("by_recipient", (q) => q.eq("recipientId", args.userId))
+      .collect();
+
+    const latestByOtherUser = new Map<
+      string,
+      (typeof sent)[number] | (typeof received)[number]
+    >();
+
+    for (const message of [...sent, ...received]) {
+      const otherUserId =
+        message.senderId === args.userId ? message.recipientId : message.senderId;
+      const existing = latestByOtherUser.get(otherUserId);
+      if (!existing || message.createdAt > existing.createdAt) {
+        latestByOtherUser.set(otherUserId, message);
+      }
+    }
+
+    const users = await ctx.db.query("users").collect();
+    const userMap = new Map(users.map((user) => [String(user._id), user]));
+
+    return Array.from(latestByOtherUser.entries())
+      .map(([otherUserId, message]) => {
+        const otherUser = userMap.get(otherUserId);
+        return {
+          userId: otherUserId,
+          username: otherUser?.username ?? "Unknown",
+          email: otherUser?.email ?? "",
+          lastMessage: message.text ?? (message.imageUrl ? "[Image]" : ""),
+          lastMessageAt: message.createdAt,
+        };
+      })
+      .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  },
+});
+
+export const getConversation = internalQuery({
+  args: {
+    userId: v.string(),
+    otherUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const sentByUser = await ctx.db
+      .query("messages")
+      .withIndex("by_sender", (q) => q.eq("senderId", args.userId))
+      .collect();
+    const sentByOther = await ctx.db
+      .query("messages")
+      .withIndex("by_sender", (q) => q.eq("senderId", args.otherUserId))
+      .collect();
+
+    return [...sentByUser, ...sentByOther]
+      .filter(
+        (message) =>
+          (message.senderId === args.userId &&
+            message.recipientId === args.otherUserId) ||
+          (message.senderId === args.otherUserId &&
+            message.recipientId === args.userId)
+      )
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((message) => ({
+        id: message._id,
+        senderId: message.senderId,
+        recipientId: message.recipientId,
+        text: message.text ?? "",
+        imageUrl: message.imageUrl ?? null,
+        createdAt: message.createdAt,
+      }));
+  },
+});
+
+export const blockUser = internalMutation({
+  args: {
+    blockerId: v.string(),
+    blockedId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (args.blockerId === args.blockedId) {
+      throw new Error("You cannot block yourself.");
+    }
+
+    const existing = await ctx.db
+      .query("blocks")
+      .withIndex("by_blocker", (q) => q.eq("blockerId", args.blockerId))
+      .collect();
+    if (existing.some((entry) => entry.blockedId === args.blockedId)) {
+      return { status: "already_blocked" as const };
+    }
+
+    await ctx.db.insert("blocks", {
+      blockerId: args.blockerId,
+      blockedId: args.blockedId,
+      createdAt: Date.now(),
+    });
+
+    return { status: "blocked" as const };
+  },
+});
+
+export const unblockUser = internalMutation({
+  args: {
+    blockerId: v.string(),
+    blockedId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const entries = await ctx.db
+      .query("blocks")
+      .withIndex("by_blocker", (q) => q.eq("blockerId", args.blockerId))
+      .collect();
+
+    const target = entries.find((entry) => entry.blockedId === args.blockedId);
+    if (!target) {
+      return { status: "not_blocked" as const };
+    }
+
+    await ctx.db.delete(target._id);
+    return { status: "unblocked" as const };
+  },
+});
+
+export const listBlockedUsers = internalQuery({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const blockedEntries = await ctx.db
+      .query("blocks")
+      .withIndex("by_blocker", (q) => q.eq("blockerId", args.userId))
+      .collect();
+
+    return blockedEntries.map((entry) => ({
+      blockedId: entry.blockedId,
+      createdAt: entry.createdAt,
+    }));
+  },
+});
