@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MapPin, Users } from "lucide-react";
+import { Calendar, MapPin, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: MapPin },
+  { href: "/dashboard/upcoming", label: "Upcoming", icon: Calendar },
   { href: "/dashboard/friends", label: "Friends", icon: Users },
 ] as const;
 

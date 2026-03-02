@@ -4,18 +4,19 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, GripVertical } from "lucide-react";
+import { saveCategoryRanking } from "@/lib/user-preferences";
+import type { EventCategory } from "@/lib/dashboard/types";
 
 interface Category {
-  id: string;
+  id: EventCategory;
   label: string;
-  emoji: string;
 }
 
 const DEFAULT_CATEGORIES: Category[] = [
-  { id: "academic", label: "Academic", emoji: "\uD83D\uDCDA" },
-  { id: "social", label: "Social", emoji: "\uD83C\uDF89" },
-  { id: "athletic", label: "Athletic", emoji: "\uD83C\uDFC5" },
-  { id: "professional", label: "Professional", emoji: "\uD83D\uDCBC" },
+  { id: "Academic", label: "Academic" },
+  { id: "Social", label: "Social" },
+  { id: "Entertainment", label: "Entertainment" },
+  { id: "Sports", label: "Sports" },
 ];
 
 export function RankingList() {
@@ -84,18 +85,11 @@ export function RankingList() {
   async function handleDone() {
     setIsSubmitting(true);
 
-    // TODO: Replace with actual backend API call to save preferences
-    // Example: await fetch('/api/user/preferences', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     rankings: categories.map((c, i) => ({ categoryId: c.id, rank: i + 1 })),
-    //   }),
-    // });
+    saveCategoryRanking(categories.map((c) => c.id));
 
     await new Promise((resolve) => setTimeout(resolve, 400));
     setIsSubmitting(false);
-    router.push("/");
+    router.push("/dashboard/upcoming");
   }
 
   return (
@@ -119,10 +113,6 @@ export function RankingList() {
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
               #{index + 1}
-            </span>
-
-            <span className="text-2xl" aria-hidden="true">
-              {category.emoji}
             </span>
 
             <span className="flex-1 text-base font-medium text-foreground sm:text-lg">

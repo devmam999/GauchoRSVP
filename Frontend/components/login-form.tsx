@@ -42,13 +42,16 @@ export function LoginForm() {
           password: formData.password,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; user?: { id?: string } };
       if (!res.ok) {
         setError(data.error ?? "Login failed.");
         setIsSubmitting(false);
         return;
       }
 
+      if (data.user?.id) {
+        window.localStorage.setItem("gaucho.auth.userId", data.user.id);
+      }
       setIsSubmitting(false);
       router.push("/dashboard");
     } catch {

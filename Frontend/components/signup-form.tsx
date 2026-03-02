@@ -44,13 +44,16 @@ export function SignupForm() {
           password: formData.password,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; user?: { id?: string } };
       if (!res.ok) {
         setError(data.error ?? "Signup failed.");
         setIsSubmitting(false);
         return;
       }
 
+      if (data.user?.id) {
+        window.localStorage.setItem("gaucho.auth.userId", data.user.id);
+      }
       setIsSubmitting(false);
       router.push("/dashboard");
     } catch {
