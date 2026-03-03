@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
+import { MapPin, Users } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MapPin, MessageSquare, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,6 +12,7 @@ import { getCurrentUser, saveCurrentUser } from "@/lib/auth/current-user";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: MapPin },
+  { href: "/dashboard/upcoming", label: "Upcoming", icon: Calendar },
   { href: "/dashboard/friends", label: "Friends", icon: Users },
   { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
 ] as const;
