@@ -97,6 +97,8 @@ For Convex cloud runtime, set env vars with these commands from `Backend`:
 npx convex env set GOOGLE_CLIENT_ID "<your-client-id>"
 npx convex env set GOOGLE_CLIENT_SECRET "<your-client-secret>"
 npx convex env set FRONTEND_APP_URL "http://localhost:3000"
+npx convex env set RESEND_API_KEY "<your-resend-api-key>"
+npx convex env set EMAIL_FROM_ADDRESS "Gaucho RSVP <onboarding@resend.dev>"
 ```
 
 Confirm they are set:
@@ -104,6 +106,32 @@ Confirm they are set:
 ```bash
 npx convex env list
 ```
+
+## Resend Email Setup (for verification codes + friend request emails)
+
+If you see this error:
+
+`Missing RESEND_API_KEY. Set it with npx convex env set RESEND_API_KEY ...`
+
+follow these steps:
+
+1. Go to `https://resend.com` and create an account.
+2. Verify your email and sign in to the Resend dashboard.
+3. In dashboard, go to **API Keys** and create a key (full sending access is fine for dev).
+4. Copy the key value (it starts with `re_`).
+5. In your project terminal:
+
+```bash
+cd Backend
+npx convex env set RESEND_API_KEY "<paste-your-re-key>"
+npx convex env set EMAIL_FROM_ADDRESS "Gaucho RSVP <onboarding@resend.dev>"
+npx convex env list
+```
+
+Notes:
+
+- For production, verify your own sending domain in Resend and set `EMAIL_FROM_ADDRESS` to that domain.
+- `onboarding@resend.dev` is convenient for development/testing.
 
 ## Google OAuth Redirect URI
 

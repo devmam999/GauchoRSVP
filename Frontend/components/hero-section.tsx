@@ -5,8 +5,9 @@ import { ArrowRight } from "lucide-react";
 
 export function HeroSection() {
   return (
-    <section className="relative flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
-      <div className="flex flex-col items-center">
+    <section className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
+      <div className="pointer-events-none absolute left-1/2 top-8 h-60 w-[34rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      <div className="flex flex-col items-center rounded-3xl border border-border/60 bg-card/55 px-8 py-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-sm sm:px-12">
         <h1
           className="animate-fade-in text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl"
           style={{ animationDelay: "0.1s" }}

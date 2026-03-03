@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { saveCurrentUser } from "@/lib/auth/current-user";
 import { ArrowRight, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 export function LoginForm() {
@@ -42,16 +43,24 @@ export function LoginForm() {
           password: formData.password,
         }),
       });
-      const data = (await res.json()) as { error?: string; user?: { id?: string } };
+      const data = (await res.json()) as {
+        error?: string;
+        user?: { id: string; username: string; email: string };
+      };
       if (!res.ok) {
         setError(data.error ?? "Login failed.");
         setIsSubmitting(false);
         return;
       }
 
-      if (data.user?.id) {
-        window.localStorage.setItem("gaucho.auth.userId", data.user.id);
+      if (data.user) {
+        saveCurrentUser({
+          id: data.user.id,
+          username: data.user.username,
+          email: data.user.email,
+        });
       }
+
       setIsSubmitting(false);
       router.push("/dashboard");
     } catch {

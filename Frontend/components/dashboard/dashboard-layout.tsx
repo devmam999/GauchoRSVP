@@ -31,10 +31,11 @@ export function DashboardLayout() {
   );
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.13),transparent_42%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.12),transparent_40%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.10),transparent_35%)]" />
       <DashboardHeader />
 
-      <div className="relative flex flex-1 flex-col sm:flex-row min-h-0">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col sm:flex-row">
         {sidebarOpen && (
           <button
             type="button"
@@ -68,7 +69,7 @@ export function DashboardLayout() {
             type="button"
             onClick={() => setSidebarOpen((o) => !o)}
             className={cn(
-              "absolute left-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:left-6 sm:top-4 sm:hidden"
+              "absolute left-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-border/70 bg-card/80 text-foreground shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:left-6 sm:top-4 sm:hidden"
             )}
             aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
           >

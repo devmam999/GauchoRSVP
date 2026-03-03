@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -13,12 +14,112 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DUMMY_USER_PROFILE } from "@/lib/dashboard/dummy-profile";
-import { EVENT_CATEGORIES } from "@/lib/dashboard/types";
+import { ErrorNotice } from "@/components/ui/error-notice";
+import { clearCurrentUser, getCurrentUser } from "@/lib/auth/current-user";
+import { EVENT_CATEGORIES, type UserProfile } from "@/lib/dashboard/types";
+
+function buildDefaultProfile(params: {
+  id: string;
+  username: string;
+  email: string;
+}): UserProfile {
+  return {
+    id: params.id,
+    name: params.username,
+    username: params.username,
+    email: params.email,
+    profileImageUrl: undefined,
+    major: "",
+    year: "",
+    bio: "",
+    homeBase: "",
+    preferredEventTypes: [],
+    notificationPreferences: {
+      emailEvents: true,
+      emailReminders: true,
+      emailFriendActivity: true,
+    },
+  };
+}
 
 export default function ProfileClient() {
-  const [profile, setProfile] = useState(DUMMY_USER_PROFILE);
+  const router = useRouter();
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_CONVEX_HTTP_URL?.replace(/\/$/, "") ?? "";
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+      setLoadError("No active user session found. Please log in again.");
+      return;
+    }
+    if (!apiBaseUrl) {
+      setLoadError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
+      return;
+    }
+
+    let isMounted = true;
+    async function loadProfile() {
+      try {
+        const res = await fetch(
+          `${apiBaseUrl}/user?userId=${encodeURIComponent(currentUser.id)}`
+        );
+        const payload = (await res.json()) as {
+          user?: { id: string; username: string; email: string };
+          error?: string;
+        };
+        if (!res.ok || !payload.user) {
+          throw new Error(payload.error ?? "Could not load user profile.");
+        }
+        if (!isMounted) return;
+        setProfile(
+          buildDefaultProfile({
+            id: payload.user.id,
+            username: payload.user.username,
+            email: payload.user.email,
+          })
+        );
+      } catch (error) {
+        if (!isMounted) return;
+        setLoadError(
+          error instanceof Error ? error.message : "Could not load user profile."
+        );
+      }
+    }
+
+    void loadProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl]);
+
+  if (loadError) {
+    return (
+      <main className="flex-1 px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-4xl">
+          <ErrorNotice
+            title="Profile load issue"
+            message={loadError}
+            onDismiss={() => setLoadError(null)}
+            className="px-4 py-4"
+          />
+        </div>
+      </main>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <main className="flex-1 px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-4xl rounded-xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+          Loading profile...
+        </div>
+      </main>
+    );
+  }
 
   const initials = profile.name
     .split(" ")
@@ -71,6 +172,18 @@ export default function ProfileClient() {
               onClick={() => setIsEditing((prev) => !prev)}
             >
               {isEditing ? "Done editing" : "Edit profile"}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="rounded-full text-xs sm:text-sm"
+              onClick={() => {
+                clearCurrentUser();
+                router.push("/");
+              }}
+            >
+              Log out
             </Button>
           </div>
         </section>

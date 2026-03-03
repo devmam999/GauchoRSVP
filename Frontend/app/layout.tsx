@@ -36,7 +36,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        {children}
+        <div aria-hidden className="ambient-theme-layer">
+          <div className="ambient-mesh" />
+          <div className="ambient-blob ambient-blob-1" />
+          <div className="ambient-blob ambient-blob-2" />
+          <div className="ambient-blob ambient-blob-3" />
+        </div>
+        <div className="relative z-10 min-h-dvh">{children}</div>
         <Analytics />
       </body>
     </html>

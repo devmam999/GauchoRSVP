@@ -122,6 +122,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 @keyframes fade-in {
@@ -137,6 +140,113 @@
 
 .animate-fade-in {
   animation: fade-in 0.8s ease-out both;
+}
+
+@keyframes blob-float-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(60px, -40px, 0) scale(1.15);
+  }
+}
+
+@keyframes blob-float-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-70px, 35px, 0) scale(1.2);
+  }
+}
+
+@keyframes blob-float-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(35px, 45px, 0) scale(1.1);
+  }
+}
+
+@keyframes mesh-shift {
+  0% {
+    background-position: 0% 0%, 100% 0%, 50% 100%;
+  }
+  50% {
+    background-position: 100% 40%, 0% 60%, 40% 0%;
+  }
+  100% {
+    background-position: 0% 0%, 100% 0%, 50% 100%;
+  }
+}
+
+@keyframes spotlight-glide {
+  0% {
+    transform: translateX(-30%) translateY(-10%);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translateX(30%) translateY(10%);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateX(-30%) translateY(-10%);
+    opacity: 0.25;
+  }
+}
+
+.ambient-theme-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ambient-mesh {
+  position: absolute;
+  inset: -20%;
+  background-image:
+    radial-gradient(circle at 20% 25%, rgba(59, 130, 246, 0.22), transparent 45%),
+    radial-gradient(circle at 80% 15%, rgba(168, 85, 247, 0.2), transparent 45%),
+    radial-gradient(circle at 50% 85%, rgba(14, 165, 233, 0.16), transparent 50%);
+  background-size: 140% 140%;
+  animation: mesh-shift 18s ease-in-out infinite;
+  filter: blur(8px);
+}
+
+.ambient-blob {
+  position: absolute;
+  width: 24rem;
+  height: 24rem;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.26;
+}
+
+.ambient-blob-1 {
+  left: -6rem;
+  top: -4rem;
+  background: rgba(59, 130, 246, 0.7);
+  animation: blob-float-a 16s ease-in-out infinite;
+}
+
+.ambient-blob-2 {
+  right: -7rem;
+  top: 5rem;
+  background: rgba(168, 85, 247, 0.68);
+  animation: blob-float-b 20s ease-in-out infinite;
+}
+
+.ambient-blob-3 {
+  left: 30%;
+  bottom: -8rem;
+  background: rgba(14, 165, 233, 0.62);
+  animation: blob-float-c 18s ease-in-out infinite;
 }
 
 /* Leaflet map: keep controls readable and match app theme */
