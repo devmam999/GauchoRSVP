@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { DashboardHeader } from "./dashboard-header";
 import { SidebarPanel } from "./sidebar-panel";
 import { EventMapView } from "./map/event-map";
 import { filterEvents } from "@/lib/dashboard/filter-events";
-import { DUMMY_EVENTS } from "@/lib/dashboard/dummy-events";
-import type { EventFilters } from "@/lib/dashboard/types";
+import type { CampusEvent, EventFilters } from "@/lib/dashboard/types";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,17 +16,115 @@ const DEFAULT_FILTERS: EventFilters = {
   timeRange: "all",
 };
 
+type BackendEvent = {
+  id: number;
+  title: string;
+  description: string;
+  locationName: string;
+  address: string | null;
+  free: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  latitude: number;
+  longitude: number;
+  topics: string[];
+  types: string[];
+  url: string | null;
+};
+
+function mapBackendEventToCampusEvent(event: BackendEvent): CampusEvent {
+  const pickCategory = (topics: string[], types: string[]) => {
+    const lowerTopics = topics.map((t) => t.toLowerCase());
+    const lowerTypes = types.map((t) => t.toLowerCase());
+
+    if (lowerTypes.some((t) => t.includes("sport"))) {
+      return "Sports" as const;
+    }
+    if (
+      lowerTopics.some((t) => t.includes("science") || t.includes("tech")) ||
+      lowerTypes.some((t) => t.includes("class") || t.includes("workshop"))
+    ) {
+      return "Academic" as const;
+    }
+    if (
+      lowerTopics.some((t) => t.includes("arts")) ||
+      lowerTypes.some((t) =>
+        t.includes("performance") || t.includes("exhibition")
+      )
+    ) {
+      return "Entertainment" as const;
+    }
+    return "Social" as const;
+  };
+
+  return {
+    id: String(event.id),
+    name: event.title,
+    position: [event.latitude, event.longitude],
+    startTime: event.startTime ?? new Date().toISOString(),
+    endTime: event.endTime ?? undefined,
+    location: event.locationName || event.address || "",
+    category: pickCategory(event.topics, event.types),
+    subtype: undefined,
+    foodProvided: null,
+    freeAdmission: event.free,
+    rsvpLink: event.url ?? undefined,
+    sourceLink: event.url ?? undefined,
+  };
+}
+
 /**
  * Dashboard layout: header, filters sidebar, and event map.
- * Uses dummy data until backend is connected.
+ * Fetches events from the backend (Localist API via Convex).
+ * If events fail to load, the map and list remain empty.
  */
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [filters, setFilters] = useState<EventFilters>(DEFAULT_FILTERS);
+  const [backendEvents, setBackendEvents] = useState<CampusEvent[] | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const apiBaseUrl =
+      process.env.NEXT_PUBLIC_CONVEX_HTTP_URL?.replace(/\/$/, "") ?? "";
+    if (!apiBaseUrl) {
+      return;
+    }
+
+    let cancelled = false;
+    async function loadEvents() {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`${apiBaseUrl}/events`);
+        if (!res.ok) {
+          return;
+        }
+        const data = (await res.json()) as { events?: BackendEvent[] };
+        if (!data.events || cancelled) return;
+        const mapped = data.events.map(mapBackendEventToCampusEvent);
+        if (!cancelled) {
+          setBackendEvents(mapped);
+        }
+      } catch {
+        // ignore errors; backendEvents stays null
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadEvents();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sourceEvents = backendEvents ?? [];
 
   const filteredEvents = useMemo(
-    () => filterEvents(DUMMY_EVENTS, filters),
-    [filters]
+    () => filterEvents(sourceEvents, filters),
+    [sourceEvents, filters]
   );
 
   return (
