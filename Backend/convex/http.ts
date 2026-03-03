@@ -557,6 +557,105 @@ http.route({
 });
 
 http.route({
+  path: "/events",
+  method: "GET",
+  handler: httpAction(async () => {
+    try {
+      const res = await fetch(
+        "https://campuscalendar.ucsb.edu/api/2/events?pp=50",
+      );
+      if (!res.ok) {
+        return jsonResponse(
+          { error: "Failed to fetch events from Localist API." },
+          502,
+        );
+      }
+
+      const data = (await res.json()) as {
+        events?: Array<{
+          event?: {
+            id: number;
+            title: string;
+            description_text?: string;
+            location_name?: string;
+            address?: string | null;
+            free?: boolean;
+            geo?: {
+              latitude?: string | null;
+              longitude?: string | null;
+              city?: string | null;
+            };
+            event_instances?: Array<{
+              event_instance?: {
+                start?: string;
+                end?: string | null;
+              };
+            }>;
+            filters?: {
+              event_topic?: Array<{ name: string }>;
+              event_types?: Array<{ name: string }>;
+            };
+            localist_url?: string;
+          };
+        }>;
+      };
+
+      const events =
+        data.events
+          ?.map((wrapper) => wrapper.event)
+          .filter((event): event is NonNullable<typeof event> => !!event)
+          .map((event) => {
+            const instance = event.event_instances?.[0]?.event_instance;
+            const lat = event.geo?.latitude
+              ? Number(event.geo.latitude)
+              : null;
+            const lng = event.geo?.longitude
+              ? Number(event.geo.longitude)
+              : null;
+
+            // Only keep events that have coordinates near UCSB/IV
+            if (
+              lat == null ||
+              lng == null ||
+              lat < 34.39 ||
+              lat > 34.43 ||
+              lng < -119.87 ||
+              lng > -119.83
+            ) {
+              return null;
+            }
+
+            const topics = event.filters?.event_topic?.map((t) => t.name) ?? [];
+            const types = event.filters?.event_types?.map((t) => t.name) ?? [];
+
+            return {
+              id: event.id,
+              title: event.title,
+              description: event.description_text ?? "",
+              locationName: event.location_name ?? "",
+              address: event.address ?? "",
+              free: !!event.free,
+              startTime: instance?.start ?? null,
+              endTime: instance?.end ?? null,
+              latitude: lat,
+              longitude: lng,
+              topics,
+              types,
+              url: event.localist_url ?? null,
+            };
+          })
+          .filter((e): e is NonNullable<typeof e> => !!e) ?? [];
+
+      return jsonResponse({ events });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unexpected events error.";
+      return jsonResponse({ error: message }, 500);
+    }
+  }),
+});
+
+http.route({
   path: "/user",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
