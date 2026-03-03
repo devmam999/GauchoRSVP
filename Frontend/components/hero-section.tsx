@@ -31,16 +31,18 @@ export function HeroSection() {
         >
           <Link
             href="/signup"
-            className="group inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-primary/40 bg-[linear-gradient(120deg,rgba(59,130,246,1),rgba(14,165,233,0.95),rgba(168,85,247,0.9))] px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-primary/25 transition-all duration-300 hover:-translate-y-0.5 hover:scale-105 hover:shadow-xl hover:shadow-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
+            <span className="pointer-events-none absolute inset-0 -translate-x-[130%] bg-[linear-gradient(105deg,transparent_36%,rgba(255,255,255,0.35)_50%,transparent_64%)] transition-transform duration-700 group-hover:translate-x-[130%]" />
             Get Started
             <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
           </Link>
 
           <Link
             href="/about"
-            className="inline-flex items-center gap-2 rounded-full bg-secondary px-8 py-3.5 text-base font-semibold text-secondary-foreground shadow-lg shadow-secondary/25 transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-border/70 bg-[linear-gradient(120deg,rgba(30,41,59,0.95),rgba(51,65,85,0.95),rgba(71,85,105,0.9))] px-8 py-3.5 text-base font-semibold text-slate-100 shadow-lg shadow-secondary/20 transition-all duration-300 hover:-translate-y-0.5 hover:scale-105 hover:shadow-xl hover:shadow-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
+            <span className="pointer-events-none absolute inset-0 -translate-x-[130%] bg-[linear-gradient(105deg,transparent_36%,rgba(255,255,255,0.18)_50%,transparent_64%)] transition-transform duration-700 group-hover:translate-x-[130%]" />
             About Us
           </Link>
         </div>
@@ -52,7 +54,7 @@ export function HeroSection() {
           Already have an account?{" "}
           <Link
             href="/login"
-            className="font-medium text-foreground underline underline-offset-4 transition-colors duration-200 hover:text-primary"
+            className="inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-3 py-1 font-medium text-primary transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:bg-primary/20"
           >
             Login
           </Link>

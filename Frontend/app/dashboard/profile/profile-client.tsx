@@ -14,9 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { ErrorNotice } from "@/components/ui/error-notice";
 import { clearCurrentUser, getCurrentUser } from "@/lib/auth/current-user";
+import {
+  loadStoredProfileImage,
+  saveStoredProfileImage,
+} from "@/lib/auth/profile-image";
 import { EVENT_CATEGORIES, type UserProfile } from "@/lib/dashboard/types";
+import { Pencil } from "lucide-react";
 
 function buildDefaultProfile(params: {
   id: string;
@@ -42,6 +48,36 @@ function buildDefaultProfile(params: {
   };
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+      } else {
+        reject(new Error("Could not read selected image."));
+      }
+    };
+    reader.onerror = () => reject(new Error("Could not read selected image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function StatusPill({ enabled }: { enabled: boolean }) {
+  return (
+    <span
+      className={
+        enabled
+          ? "rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-400"
+          : "rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400"
+      }
+    >
+      {enabled ? "On" : "Off"}
+    </span>
+  );
+}
+
 export default function ProfileClient() {
   const router = useRouter();
   const apiBaseUrl =
@@ -49,6 +85,10 @@ export default function ProfileClient() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const updateProfile = (updater: (prev: UserProfile) => UserProfile) => {
+    setProfile((prev) => (prev ? updater(prev) : prev));
+  };
 
   useEffect(() => {
     const currentUser = getCurrentUser();
@@ -56,6 +96,7 @@ export default function ProfileClient() {
       setLoadError("No active user session found. Please log in again.");
       return;
     }
+    const activeUser = currentUser;
     if (!apiBaseUrl) {
       setLoadError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
       return;
@@ -65,7 +106,7 @@ export default function ProfileClient() {
     async function loadProfile() {
       try {
         const res = await fetch(
-          `${apiBaseUrl}/user?userId=${encodeURIComponent(currentUser.id)}`
+          `${apiBaseUrl}/user?userId=${encodeURIComponent(activeUser.id)}`
         );
         const payload = (await res.json()) as {
           user?: { id: string; username: string; email: string };
@@ -75,6 +116,7 @@ export default function ProfileClient() {
           throw new Error(payload.error ?? "Could not load user profile.");
         }
         if (!isMounted) return;
+        const persistedImage = loadStoredProfileImage(payload.user.id);
         setProfile(
           buildDefaultProfile({
             id: payload.user.id,
@@ -82,6 +124,9 @@ export default function ProfileClient() {
             email: payload.user.email,
           })
         );
+        if (persistedImage) {
+          setProfile((prev) => (prev ? { ...prev, profileImageUrl: persistedImage } : prev));
+        }
       } catch (error) {
         if (!isMounted) return;
         setLoadError(
@@ -128,17 +173,66 @@ export default function ProfileClient() {
     .toUpperCase()
     .slice(0, 2);
 
+  const handleProfileImageChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+
+    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setAvatarError("Please upload a PNG, JPG, or WEBP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("Image must be 5MB or smaller.");
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setProfile((prev) => (prev ? { ...prev, profileImageUrl: dataUrl } : prev));
+      saveStoredProfileImage(profile.id, dataUrl);
+      setAvatarError(null);
+    } catch (error) {
+      setAvatarError(
+        error instanceof Error ? error.message : "Could not update profile picture."
+      );
+    }
+  };
+
   return (
     <main className="flex-1 px-4 py-6 sm:px-6">
       <div className="mx-auto flex max-w-4xl flex-col gap-6">
         <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
-              <AvatarImage src={profile.profileImageUrl} alt={profile.name} />
-              <AvatarFallback className="bg-primary text-lg font-semibold text-primary-foreground sm:text-xl">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative group">
+              <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
+                <AvatarImage
+                  src={profile.profileImageUrl}
+                  alt={profile.name}
+                  className="object-cover"
+                />
+                <AvatarFallback className="bg-primary text-lg font-semibold text-primary-foreground sm:text-xl">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              {isEditing ? (
+                <label
+                  className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                  aria-label="Upload profile picture"
+                >
+                  <Pencil className="h-5 w-5 text-white" />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    className="hidden"
+                    onChange={handleProfileImageChange}
+                  />
+                </label>
+              ) : null}
+            </div>
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                 {profile.name}
@@ -187,6 +281,13 @@ export default function ProfileClient() {
             </Button>
           </div>
         </section>
+        {avatarError ? (
+          <ErrorNotice
+            title="Profile picture issue"
+            message={avatarError}
+            onDismiss={() => setAvatarError(null)}
+          />
+        ) : null}
 
         <section className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)]">
           <Card className="border-border bg-card">
@@ -208,7 +309,7 @@ export default function ProfileClient() {
                     <Input
                       value={profile.major ?? ""}
                       onChange={(e) =>
-                        setProfile((prev) => ({
+                        updateProfile((prev) => ({
                           ...prev,
                           major: e.target.value,
                         }))
@@ -228,7 +329,7 @@ export default function ProfileClient() {
                     <Input
                       value={profile.year ?? ""}
                       onChange={(e) =>
-                        setProfile((prev) => ({
+                        updateProfile((prev) => ({
                           ...prev,
                           year: e.target.value,
                         }))
@@ -250,7 +351,7 @@ export default function ProfileClient() {
                   <Input
                     value={profile.homeBase ?? ""}
                     onChange={(e) =>
-                      setProfile((prev) => ({
+                      updateProfile((prev) => ({
                         ...prev,
                         homeBase: e.target.value,
                       }))
@@ -271,7 +372,7 @@ export default function ProfileClient() {
                   <Textarea
                     value={profile.bio ?? ""}
                     onChange={(e) =>
-                      setProfile((prev) => ({
+                      updateProfile((prev) => ({
                         ...prev,
                         bio: e.target.value,
                       }))
@@ -298,7 +399,7 @@ export default function ProfileClient() {
                         <Checkbox
                           checked={profile.preferredEventTypes.includes(type)}
                           onCheckedChange={(checked) => {
-                            setProfile((prev) => {
+                            updateProfile((prev) => {
                               const selected = prev.preferredEventTypes;
                               if (checked) {
                                 if (selected.includes(type)) return prev;
@@ -355,25 +456,26 @@ export default function ProfileClient() {
                   </p>
                 </div>
                 {isEditing ? (
-                  <Checkbox
-                    checked={profile.notificationPreferences.emailEvents}
-                    onCheckedChange={(checked) =>
-                      setProfile((prev) => ({
-                        ...prev,
-                        notificationPreferences: {
-                          ...prev.notificationPreferences,
-                          emailEvents: !!checked,
-                        },
-                      }))
-                    }
-                    aria-label="Toggle event announcement emails"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {profile.notificationPreferences.emailEvents ? "On" : "Off"}
+                    </span>
+                    <Switch
+                      checked={profile.notificationPreferences.emailEvents}
+                      onCheckedChange={(checked) =>
+                        updateProfile((prev) => ({
+                          ...prev,
+                          notificationPreferences: {
+                            ...prev.notificationPreferences,
+                            emailEvents: !!checked,
+                          },
+                        }))
+                      }
+                      aria-label="Toggle event announcement emails"
+                    />
+                  </div>
                 ) : (
-                  <span className="text-xs text-primary">
-                    {profile.notificationPreferences.emailEvents
-                      ? "On (email)"
-                      : "Off"}
-                  </span>
+                  <StatusPill enabled={profile.notificationPreferences.emailEvents} />
                 )}
               </div>
 
@@ -387,25 +489,26 @@ export default function ProfileClient() {
                   </p>
                 </div>
                 {isEditing ? (
-                  <Checkbox
-                    checked={profile.notificationPreferences.emailReminders}
-                    onCheckedChange={(checked) =>
-                      setProfile((prev) => ({
-                        ...prev,
-                        notificationPreferences: {
-                          ...prev.notificationPreferences,
-                          emailReminders: !!checked,
-                        },
-                      }))
-                    }
-                    aria-label="Toggle RSVP reminder emails"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {profile.notificationPreferences.emailReminders ? "On" : "Off"}
+                    </span>
+                    <Switch
+                      checked={profile.notificationPreferences.emailReminders}
+                      onCheckedChange={(checked) =>
+                        updateProfile((prev) => ({
+                          ...prev,
+                          notificationPreferences: {
+                            ...prev.notificationPreferences,
+                            emailReminders: !!checked,
+                          },
+                        }))
+                      }
+                      aria-label="Toggle RSVP reminder emails"
+                    />
+                  </div>
                 ) : (
-                  <span className="text-xs text-primary">
-                    {profile.notificationPreferences.emailReminders
-                      ? "On (email)"
-                      : "Off"}
-                  </span>
+                  <StatusPill enabled={profile.notificationPreferences.emailReminders} />
                 )}
               </div>
 
@@ -419,27 +522,30 @@ export default function ProfileClient() {
                   </p>
                 </div>
                 {isEditing ? (
-                  <Checkbox
-                    checked={
-                      profile.notificationPreferences.emailFriendActivity
-                    }
-                    onCheckedChange={(checked) =>
-                      setProfile((prev) => ({
-                        ...prev,
-                        notificationPreferences: {
-                          ...prev.notificationPreferences,
-                          emailFriendActivity: !!checked,
-                        },
-                      }))
-                    }
-                    aria-label="Toggle friend activity emails"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {profile.notificationPreferences.emailFriendActivity ? "On" : "Off"}
+                    </span>
+                    <Switch
+                      checked={
+                        profile.notificationPreferences.emailFriendActivity
+                      }
+                      onCheckedChange={(checked) =>
+                        updateProfile((prev) => ({
+                          ...prev,
+                          notificationPreferences: {
+                            ...prev.notificationPreferences,
+                            emailFriendActivity: !!checked,
+                          },
+                        }))
+                      }
+                      aria-label="Toggle friend activity emails"
+                    />
+                  </div>
                 ) : (
-                  <span className="text-xs text-primary">
-                    {profile.notificationPreferences.emailFriendActivity
-                      ? "On (email)"
-                      : "Off"}
-                  </span>
+                  <StatusPill
+                    enabled={profile.notificationPreferences.emailFriendActivity}
+                  />
                 )}
               </div>
             </CardContent>

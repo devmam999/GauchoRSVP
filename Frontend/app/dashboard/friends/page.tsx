@@ -9,12 +9,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice } from "@/components/ui/error-notice";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 import { DUMMY_MY_RSVPED_EVENT_IDS } from "@/lib/dashboard/dummy-friends";
 import { DUMMY_EVENTS } from "@/lib/dashboard/dummy-events";
 import type { Friend, RegisteredProfile } from "@/lib/dashboard/types";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { Ban, Bell, MessageCircle, X } from "lucide-react";
+import { Ban, MessageCircle } from "lucide-react";
 
 function getInitials(name: string): string {
   return name
@@ -157,9 +156,6 @@ export default function FriendsPage() {
   const [outgoingRequestUserIds, setOutgoingRequestUserIds] = useState<Set<string>>(
     new Set()
   );
-  const [notifications, setNotifications] = useState<
-    { id: string; message: string; read: boolean; createdAt: number }[]
-  >([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [profilesError, setProfilesError] = useState<string | null>(null);
 
@@ -184,14 +180,9 @@ export default function FriendsPage() {
         setProfilesLoading(true);
         setProfilesError(null);
 
-        const [usersRes, friendRes, notificationsRes, blockedRes] = await Promise.all([
+        const [usersRes, friendRes, blockedRes] = await Promise.all([
           fetch(`${apiBaseUrl}/friends/registered-users`),
           fetch(`${apiBaseUrl}/friend?userId=${encodeURIComponent(activeUserId)}`),
-          fetch(
-            `${apiBaseUrl}/notifications?userId=${encodeURIComponent(
-              activeUserId
-            )}`
-          ),
           fetch(`${apiBaseUrl}/block?userId=${encodeURIComponent(activeUserId)}`),
         ]);
 
@@ -209,15 +200,6 @@ export default function FriendsPage() {
           outgoingRequestUserIds?: string[];
           error?: string;
         };
-        const notificationsPayload = (await notificationsRes.json()) as {
-          notifications?: Array<{
-            id: string;
-            message: string;
-            read: boolean;
-            createdAt: number;
-          }>;
-          error?: string;
-        };
         const blockedPayload = (await blockedRes.json()) as {
           blocked?: Array<{ blockedId: string }>;
           error?: string;
@@ -228,11 +210,6 @@ export default function FriendsPage() {
         }
         if (!friendRes.ok) {
           throw new Error(friendPayload.error ?? "Could not fetch friends.");
-        }
-        if (!notificationsRes.ok) {
-          throw new Error(
-            notificationsPayload.error ?? "Could not fetch notifications."
-          );
         }
         if (!blockedRes.ok) {
           throw new Error(blockedPayload.error ?? "Could not fetch blocked users.");
@@ -261,22 +238,6 @@ export default function FriendsPage() {
           new Set(friendPayload.outgoingRequestUserIds ?? [])
         );
         setBlockedIds(new Set((blockedPayload.blocked ?? []).map((entry) => entry.blockedId)));
-        const loadedNotifications = notificationsPayload.notifications ?? [];
-        setNotifications(loadedNotifications);
-
-        if (loadedNotifications.some((notification) => !notification.read)) {
-          void fetch(`${apiBaseUrl}/notifications`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "mark_read_all",
-              userId: activeUserId,
-            }),
-          });
-          setNotifications((prev) =>
-            prev.map((notification) => ({ ...notification, read: true }))
-          );
-        }
       } catch (error) {
         if (!isMounted) return;
         const message =
@@ -438,28 +399,6 @@ export default function FriendsPage() {
     await refreshFriendContext();
   };
 
-  const handleRemoveNotification = async (notificationId: string) => {
-    if (!apiBaseUrl || !currentUserId) return;
-
-    const res = await fetch(`${apiBaseUrl}/notifications`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "delete",
-        userId: currentUserId,
-        notificationId,
-      }),
-    });
-    const payload = (await res.json()) as { error?: string };
-    if (!res.ok) {
-      setProfilesError(payload.error ?? "Could not remove notification.");
-      return;
-    }
-    setNotifications((prev) =>
-      prev.filter((notification) => notification.id !== notificationId)
-    );
-  };
-
   return (
     <div className="relative flex min-h-dvh flex-col bg-background">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_40%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_38%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.12),transparent_35%)]" />
@@ -583,44 +522,6 @@ export default function FriendsPage() {
               </section>
             )}
 
-            <section aria-label="Notifications">
-              <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                <Bell className="h-4 w-4" />
-                Notifications ({notifications.length})
-              </h2>
-              {notifications.length === 0 ? (
-                <p className="rounded-xl border border-border/70 bg-card/80 py-8 text-center text-muted-foreground shadow-sm backdrop-blur-sm">
-                  No notifications yet.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {notifications.slice(0, 12).map((notification) => (
-                    <li
-                      key={notification.id}
-                      className={cn(
-                        "flex items-start justify-between gap-3 rounded-xl border border-border/70 bg-card/80 px-4 py-3 text-sm text-foreground shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-[1.01]",
-                        !notification.read && "border-primary/30"
-                      )}
-                    >
-                      <div>
-                        <p>{notification.message}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {new Date(notification.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="rounded-full border border-border p-1.5 text-muted-foreground transition-all duration-200 hover:scale-110 hover:border-destructive/60 hover:text-destructive"
-                        onClick={() => handleRemoveNotification(notification.id)}
-                        aria-label="Remove notification"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
           </div>
         </ScrollArea>
       </main>

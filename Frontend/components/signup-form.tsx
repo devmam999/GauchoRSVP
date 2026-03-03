@@ -235,11 +235,11 @@ export function SignupForm() {
           </span>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3">
           <Button
             type="button"
             variant="outline"
-            className="h-12 flex-1 cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background disabled:cursor-not-allowed"
+            className="h-12 w-full cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background disabled:cursor-not-allowed"
             onClick={handleGoogleSignup}
             disabled={isSubmitting}
           >
@@ -262,30 +262,6 @@ export function SignupForm() {
               />
             </svg>
             Google
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="h-12 flex-1 cursor-pointer gap-2 rounded-full border-border bg-foreground text-background transition-transform duration-200 hover:scale-[1.03] hover:bg-foreground/90 hover:text-background"
-            onClick={() => {
-              // TODO: Implement UCSB NetID SSO
-            }}
-          >
-            <svg
-              className="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M2 3h20v14H2z" />
-              <path d="M8 21h8" />
-              <path d="M12 17v4" />
-            </svg>
-            UCSB Net ID
           </Button>
         </div>
       </div>

@@ -4,7 +4,9 @@ import Link from "next/link";
 export default function LoginPage() {
   return (
     <main className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-background px-4 py-12">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_42%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_40%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.12),transparent_35%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[url('/ucsb-night.png')] bg-cover bg-center bg-no-repeat" />
+      <div className="pointer-events-none absolute inset-0 bg-black/62" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.20),transparent_42%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.16),transparent_40%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.14),transparent_35%)]" />
       <div className="relative z-10 w-full max-w-md animate-fade-in rounded-3xl border border-border/60 bg-card/55 p-8 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-sm">
         <Link
           href="/"
