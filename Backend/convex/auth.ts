@@ -40,7 +40,7 @@ export const createLocalUser = internalMutation({
           username,
           passwordHash: args.passwordHash,
           passwordSalt: args.passwordSalt,
-          emailVerified: false,
+          emailVerified: true,
         });
 
         return {
@@ -66,7 +66,7 @@ export const createLocalUser = internalMutation({
     const userId = await ctx.db.insert("users", {
       email,
       username,
-      emailVerified: false,
+      emailVerified: true,
       authProvider: "local",
       passwordHash: args.passwordHash,
       passwordSalt: args.passwordSalt,
@@ -775,5 +775,322 @@ export const listBlockedUsers = internalQuery({
       blockedId: entry.blockedId,
       createdAt: entry.createdAt,
     }));
+  },
+});
+
+export const toggleEventRsvp = internalMutation({
+  args: {
+    eventId: v.string(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId as Id<"users">);
+    if (!user) {
+      throw new Error("User not found.");
+    }
+
+    const existing = await ctx.db
+      .query("eventRsvps")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    const userRsvp = existing.find((item) => item.userId === args.userId);
+
+    if (userRsvp) {
+      await ctx.db.delete(userRsvp._id);
+      return { userHasRsvped: false as const };
+    }
+
+    await ctx.db.insert("eventRsvps", {
+      eventId: args.eventId,
+      userId: args.userId,
+      createdAt: Date.now(),
+    });
+    return { userHasRsvped: true as const };
+  },
+});
+
+export const getEventRsvpSummary = internalQuery({
+  args: {
+    eventId: v.string(),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const rsvps = await ctx.db
+      .query("eventRsvps")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    return {
+      count: rsvps.length,
+      userHasRsvped: args.userId
+        ? rsvps.some((item) => item.userId === args.userId)
+        : false,
+    };
+  },
+});
+
+export const getFriendsEventAttendance = internalQuery({
+  args: {
+    userId: v.string(),
+    eventIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const uniqueEventIds = Array.from(new Set(args.eventIds)).filter(Boolean);
+    if (uniqueEventIds.length === 0) {
+      return {
+        byEvent: {} as Record<string, { count: number; friendUsernames: string[] }>,
+        totalEventsWithFriends: 0,
+        totalFriendRsvps: 0,
+      };
+    }
+
+    const [outgoing, incoming, users] = await Promise.all([
+      ctx.db
+        .query("friendRequests")
+        .withIndex("by_requester", (q) => q.eq("requesterId", args.userId))
+        .collect(),
+      ctx.db
+        .query("friendRequests")
+        .withIndex("by_addressee", (q) => q.eq("addresseeId", args.userId))
+        .collect(),
+      ctx.db.query("users").collect(),
+    ]);
+
+    const friendIds = new Set<string>();
+    for (const request of [...outgoing, ...incoming]) {
+      if (request.status !== "accepted") continue;
+      if (request.requesterId === args.userId) {
+        friendIds.add(request.addresseeId);
+      } else {
+        friendIds.add(request.requesterId);
+      }
+    }
+
+    if (friendIds.size === 0) {
+      return {
+        byEvent: {} as Record<string, { count: number; friendUsernames: string[] }>,
+        totalEventsWithFriends: 0,
+        totalFriendRsvps: 0,
+      };
+    }
+
+    const usernameById = new Map(
+      users.map((user) => [user._id as string, user.username])
+    );
+
+    const rsvpsByEvent = await Promise.all(
+      uniqueEventIds.map(async (eventId) => {
+        const rsvps = await ctx.db
+          .query("eventRsvps")
+          .withIndex("by_event", (q) => q.eq("eventId", eventId))
+          .collect();
+        const friendUsernames = rsvps
+          .filter((entry) => friendIds.has(entry.userId))
+          .map((entry) => usernameById.get(entry.userId) ?? "Friend");
+        return {
+          eventId,
+          friendUsernames,
+        };
+      })
+    );
+
+    const byEvent: Record<string, { count: number; friendUsernames: string[] }> = {};
+    let totalEventsWithFriends = 0;
+    let totalFriendRsvps = 0;
+    for (const item of rsvpsByEvent) {
+      const uniqueNames = Array.from(new Set(item.friendUsernames));
+      const count = uniqueNames.length;
+      byEvent[item.eventId] = {
+        count,
+        friendUsernames: uniqueNames,
+      };
+      if (count > 0) {
+        totalEventsWithFriends += 1;
+        totalFriendRsvps += count;
+      }
+    }
+
+    return {
+      byEvent,
+      totalEventsWithFriends,
+      totalFriendRsvps,
+    };
+  },
+});
+
+export const getEventsEngagementBatch = internalQuery({
+  args: {
+    eventIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const uniqueEventIds = Array.from(new Set(args.eventIds)).filter(Boolean);
+    if (uniqueEventIds.length === 0) {
+      return {
+        byEvent: {} as Record<
+          string,
+          { averageRating: number; reviewCount: number; rsvpCount: number }
+        >,
+      };
+    }
+
+    const rows = await Promise.all(
+      uniqueEventIds.map(async (eventId) => {
+        const [reviews, rsvps] = await Promise.all([
+          ctx.db
+            .query("eventReviews")
+            .withIndex("by_event", (q) => q.eq("eventId", eventId))
+            .collect(),
+          ctx.db
+            .query("eventRsvps")
+            .withIndex("by_event", (q) => q.eq("eventId", eventId))
+            .collect(),
+        ]);
+
+        const averageRating =
+          reviews.length === 0
+            ? 0
+            : reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
+
+        return {
+          eventId,
+          averageRating: Number(averageRating.toFixed(1)),
+          reviewCount: reviews.length,
+          rsvpCount: rsvps.length,
+        };
+      })
+    );
+
+    const byEvent: Record<
+      string,
+      { averageRating: number; reviewCount: number; rsvpCount: number }
+    > = {};
+    for (const row of rows) {
+      byEvent[row.eventId] = {
+        averageRating: row.averageRating,
+        reviewCount: row.reviewCount,
+        rsvpCount: row.rsvpCount,
+      };
+    }
+
+    return { byEvent };
+  },
+});
+
+export const getEventEngagementSummary = internalQuery({
+  args: {
+    eventId: v.string(),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const [rsvps, reviews] = await Promise.all([
+      ctx.db
+        .query("eventRsvps")
+        .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+        .collect(),
+      ctx.db
+        .query("eventReviews")
+        .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+        .collect(),
+    ]);
+
+    const averageRating =
+      reviews.length === 0
+        ? 0
+        : reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
+
+    return {
+      rsvpCount: rsvps.length,
+      userHasRsvped: args.userId
+        ? rsvps.some((item) => item.userId === args.userId)
+        : false,
+      averageRating: Number(averageRating.toFixed(1)),
+      reviewCount: reviews.length,
+    };
+  },
+});
+
+export const upsertEventReview = internalMutation({
+  args: {
+    eventId: v.string(),
+    userId: v.string(),
+    rating: v.number(),
+    reviewText: v.string(),
+    imageStorageId: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.rating < 1 || args.rating > 5) {
+      throw new Error("Rating must be between 1 and 5.");
+    }
+    const user = await ctx.db.get(args.userId as Id<"users">);
+    if (!user) {
+      throw new Error("User not found.");
+    }
+
+    const existingForEvent = await ctx.db
+      .query("eventReviews")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    const existing = existingForEvent.find((item) => item.userId === args.userId);
+    const now = Date.now();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        rating: args.rating,
+        reviewText: args.reviewText.trim(),
+        imageStorageId: args.imageStorageId,
+        imageUrl: args.imageUrl,
+        updatedAt: now,
+      });
+      return { status: "updated" as const, reviewId: existing._id };
+    }
+
+    const reviewId = await ctx.db.insert("eventReviews", {
+      eventId: args.eventId,
+      userId: args.userId,
+      rating: args.rating,
+      reviewText: args.reviewText.trim(),
+      imageStorageId: args.imageStorageId,
+      imageUrl: args.imageUrl,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { status: "created" as const, reviewId };
+  },
+});
+
+export const listEventReviews = internalQuery({
+  args: {
+    eventId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reviews = await ctx.db
+      .query("eventReviews")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+
+    const users = await ctx.db.query("users").collect();
+    const userMap = new Map(users.map((user) => [String(user._id), user]));
+    const ordered = reviews.sort((a, b) => b.updatedAt - a.updatedAt);
+    const averageRating =
+      ordered.length === 0
+        ? 0
+        : ordered.reduce((sum, review) => sum + review.rating, 0) / ordered.length;
+
+    return {
+      averageRating: Number(averageRating.toFixed(1)),
+      reviewCount: ordered.length,
+      reviews: ordered.map((review) => ({
+        id: review._id,
+        eventId: review.eventId,
+        userId: review.userId,
+        username: userMap.get(review.userId)?.username ?? "Anonymous",
+        rating: review.rating,
+        reviewText: review.reviewText,
+        imageUrl: review.imageUrl ?? null,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+      })),
+    };
   },
 });

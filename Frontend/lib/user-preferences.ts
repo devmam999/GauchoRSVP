@@ -1,7 +1,16 @@
 import { EVENT_CATEGORIES, type EventCategory } from "@/lib/dashboard/types";
 
 const FALLBACK_CATEGORY_RANKING_KEY = "gaucho.preferences.categoryRanking";
+const FALLBACK_TOPIC_RANKING_KEY = "gaucho.preferences.topicRanking";
 const USER_ID_KEY = "gaucho.auth.userId";
+
+export const EVENT_TOPIC_OPTIONS = [
+  "Arts",
+  "Campus & Community",
+  "Science & Tech",
+  "Society & Culture",
+] as const;
+export type EventTopicOption = (typeof EVENT_TOPIC_OPTIONS)[number];
 
 function getCategoryRankingKey(): string {
   if (typeof window === "undefined") return FALLBACK_CATEGORY_RANKING_KEY;
@@ -10,6 +19,15 @@ function getCategoryRankingKey(): string {
     return `gaucho.user.${userId}.preferences.categoryRanking`;
   }
   return FALLBACK_CATEGORY_RANKING_KEY;
+}
+
+function getTopicRankingKey(): string {
+  if (typeof window === "undefined") return FALLBACK_TOPIC_RANKING_KEY;
+  const userId = window.localStorage.getItem(USER_ID_KEY);
+  if (userId && userId.trim().length > 0) {
+    return `gaucho.user.${userId}.preferences.topicRanking`;
+  }
+  return FALLBACK_TOPIC_RANKING_KEY;
 }
 
 function isEventCategory(value: unknown): value is EventCategory {
@@ -39,6 +57,36 @@ export function saveCategoryRanking(ranking: EventCategory[]) {
   if (typeof window === "undefined") return;
   const deduped = Array.from(new Set(ranking)).filter(isEventCategory);
   window.localStorage.setItem(getCategoryRankingKey(), JSON.stringify(deduped));
+}
+
+function isEventTopicOption(value: unknown): value is EventTopicOption {
+  return (
+    typeof value === "string" &&
+    (EVENT_TOPIC_OPTIONS as readonly string[]).includes(value)
+  );
+}
+
+export function loadTopicRanking(): EventTopicOption[] | null {
+  if (typeof window === "undefined") return null;
+  const primaryKey = getTopicRankingKey();
+  const raw =
+    window.localStorage.getItem(primaryKey) ??
+    window.localStorage.getItem(FALLBACK_TOPIC_RANKING_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const ranking = parsed.filter(isEventTopicOption);
+    return ranking.length > 0 ? ranking : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveTopicRanking(ranking: EventTopicOption[]) {
+  if (typeof window === "undefined") return;
+  const deduped = Array.from(new Set(ranking)).filter(isEventTopicOption);
+  window.localStorage.setItem(getTopicRankingKey(), JSON.stringify(deduped));
 }
 
 export function getCategoryRank(category: EventCategory, ranking: EventCategory[] | null): number {

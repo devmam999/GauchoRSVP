@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { EventCard } from "@/components/dashboard/event-card";
@@ -8,21 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DUMMY_EVENTS } from "@/lib/dashboard/dummy-events";
-import type { CampusEvent, EventCategory } from "@/lib/dashboard/types";
-import { getCategoryRank, loadCategoryRanking } from "@/lib/user-preferences";
-import { Clock3, Filter } from "lucide-react";
+import type { CampusEvent, EventFilters } from "@/lib/dashboard/types";
+import { distanceMilesBetween, estimateTravel } from "@/lib/dashboard/travel";
+import { loadFriendAttendanceForEvents } from "@/lib/dashboard/friend-attendance";
+import { loadEngagementForEvents } from "@/lib/dashboard/engagement";
+import { Clock3, Filter, LocateFixed } from "lucide-react";
+import { filterEvents } from "@/lib/dashboard/filter-events";
 
 type TimeRange = "today" | "tomorrow" | "week" | "month" | "custom" | "all";
-type PriorityFilter = EventCategory | "freeAdmission";
 
-const CATEGORY_FILTER_OPTIONS: Array<{ value: PriorityFilter; label: string }> = [
-  { value: "Social", label: "Social" },
-  { value: "Academic", label: "Academic" },
-  { value: "Entertainment", label: "Entertainment" },
-  { value: "Sports", label: "Sports" },
-  { value: "freeAdmission", label: "Free admission" },
-];
+const DEFAULT_FILTERS: EventFilters = {
+  eventTargetAudience: [],
+  eventTopic: [],
+  eventTypes: [],
+  nearestOnly: false,
+  friendPriority: false,
+  ratingPriority: false,
+};
 
 const TIME_FILTER_OPTIONS: Array<{ value: TimeRange; label: string }> = [
   { value: "today", label: "Today" },
@@ -79,17 +81,17 @@ function isInRange(
 ) {
   const start = new Date(eventStartIso);
   if (Number.isNaN(start.getTime())) return false;
-  if (start < now) return false;
+  const startOfToday = startOfLocalDay(now);
 
-  if (range === "all") return true;
-  if (range === "today") return start < endOfLocalDay(now);
+  if (range === "all") return start >= startOfToday;
+  if (range === "today") return start >= startOfToday && start < endOfLocalDay(now);
   if (range === "tomorrow") {
     const tomorrowStart = startOfTomorrow(now);
     const tomorrowEnd = endOfTomorrow(now);
     return start >= tomorrowStart && start < tomorrowEnd;
   }
-  if (range === "week") return start < endOfLocalWeek(now);
-  if (range === "month") return start < startOfNextLocalMonth(now);
+  if (range === "week") return start >= startOfToday && start < endOfLocalWeek(now);
+  if (range === "month") return start >= startOfToday && start < startOfNextLocalMonth(now);
   if (range === "custom") {
     const parsedCustomStart = customStart ? new Date(customStart) : null;
     const parsedCustomEnd = customEnd ? new Date(customEnd) : null;
@@ -106,70 +108,298 @@ function isInRange(
   return true;
 }
 
-function sortByTime(events: CampusEvent[]) {
-  return [...events].sort(
-    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
-  );
+function isEventNotPast(event: CampusEvent, now: Date) {
+  const start = new Date(event.startTime);
+  if (Number.isNaN(start.getTime())) return false;
+
+  const end = event.endTime ? new Date(event.endTime) : null;
+  if (end && !Number.isNaN(end.getTime())) {
+    return end >= now;
+  }
+
+  const startOfToday = startOfLocalDay(now);
+  return start >= startOfToday;
+}
+
+function compareFriendsAndRating(a: CampusEvent, b: CampusEvent) {
+  const ratingA = a.engagementAverageRating ?? 0;
+  const ratingB = b.engagementAverageRating ?? 0;
+  const friendA = a.friendRsvpCount ?? 0;
+  const friendB = b.friendRsvpCount ?? 0;
+  const diff = Math.abs(ratingA - ratingB);
+
+  if (diff > 1) {
+    if (ratingA !== ratingB) return ratingB - ratingA;
+    if (friendA !== friendB) return friendB - friendA;
+  } else {
+    if (friendA !== friendB) return friendB - friendA;
+    if (ratingA !== ratingB) return ratingB - ratingA;
+  }
+
+  return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+}
+
+function compareFriendsOnly(a: CampusEvent, b: CampusEvent) {
+  const byFriends = (b.friendRsvpCount ?? 0) - (a.friendRsvpCount ?? 0);
+  if (byFriends !== 0) return byFriends;
+  return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+}
+
+function compareRatingOnly(a: CampusEvent, b: CampusEvent) {
+  const byRating = (b.engagementAverageRating ?? 0) - (a.engagementAverageRating ?? 0);
+  if (byRating !== 0) return byRating;
+  return compareFriendsOnly(a, b);
+}
+
+type BackendEvent = {
+  id: number;
+  title: string;
+  description: string;
+  descriptionHtml: string;
+  photoUrl: string | null;
+  locationName: string;
+  address: string | null;
+  allowsAttendance: boolean;
+  free: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  localistNumAttending: number;
+  latitude: number;
+  longitude: number;
+  targetAudience: string[];
+  topics: string[];
+  types: string[];
+  url: string | null;
+};
+
+function mapBackendEventToCampusEvent(event: BackendEvent): CampusEvent {
+  const pickCategory = (topics: string[], types: string[]) => {
+    const lowerTopics = topics.map((t) => t.toLowerCase());
+    const lowerTypes = types.map((t) => t.toLowerCase());
+
+    if (lowerTypes.some((t) => t.includes("sport"))) {
+      return "Sports" as const;
+    }
+    if (
+      lowerTopics.some((t) => t.includes("science") || t.includes("tech")) ||
+      lowerTypes.some((t) => t.includes("class") || t.includes("workshop"))
+    ) {
+      return "Academic" as const;
+    }
+    if (
+      lowerTopics.some((t) => t.includes("arts")) ||
+      lowerTypes.some((t) => t.includes("performance") || t.includes("exhibition"))
+    ) {
+      return "Entertainment" as const;
+    }
+    return "Social" as const;
+  };
+
+  return {
+    id: String(event.id),
+    name: event.title,
+    position: [event.latitude, event.longitude],
+    startTime: event.startTime ?? new Date().toISOString(),
+    endTime: event.endTime ?? undefined,
+    location: event.locationName || event.address || "",
+    category: pickCategory(event.topics, event.types),
+    subtype: undefined,
+    foodProvided: null,
+    freeAdmission: event.free,
+    rsvpLink: event.url ?? undefined,
+    sourceLink: event.url ?? undefined,
+    description: event.description,
+    descriptionHtml: event.descriptionHtml,
+    photoUrl: event.photoUrl ?? undefined,
+    localistNumAttending: event.localistNumAttending,
+    allowsAttendance: event.allowsAttendance,
+    targetAudience: event.targetAudience,
+    topics: event.topics,
+    types: event.types,
+  };
 }
 
 export default function UpcomingEventsPage() {
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_CONVEX_HTTP_URL?.replace(/\/$/, "") ?? "";
   const [range, setRange] = useState<TimeRange>("week");
-  const [selectedPriorityFilters, setSelectedPriorityFilters] = useState<PriorityFilter[]>(
-    [],
-  );
-  const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<EventFilters>(DEFAULT_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [timeFilterOpen, setTimeFilterOpen] = useState(false);
+  const [nearestOnly, setNearestOnly] = useState(false);
+  const [friendPriority, setFriendPriority] = useState(false);
+  const [ratingPriority, setRatingPriority] = useState(false);
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [sourceEvents, setSourceEvents] = useState<CampusEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const now = useMemo(() => new Date(), []);
-  const ranking = useMemo(() => loadCategoryRanking(), []);
 
-  const activePriorityCount = selectedPriorityFilters.length;
+  useEffect(() => {
+    if (!apiBaseUrl) return;
+
+    let cancelled = false;
+    async function loadEvents() {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`${apiBaseUrl}/events`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { events?: BackendEvent[] };
+        if (!data.events || cancelled) return;
+        const mapped = data.events.map(mapBackendEventToCampusEvent);
+        const withFriends = await loadFriendAttendanceForEvents(apiBaseUrl, mapped);
+        const withEngagement = await loadEngagementForEvents(
+          apiBaseUrl,
+          withFriends.events
+        );
+        if (!cancelled) {
+          setSourceEvents(withEngagement);
+        }
+      } catch {
+        // Keep existing list if request fails.
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadEvents();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl]);
+
+  const activeFilterCount =
+    filters.eventTargetAudience.length +
+    filters.eventTopic.length +
+    filters.eventTypes.length;
+
+  const requestLocation = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationError("Geolocation is not supported on this browser.");
+      return;
+    }
+    setIsLocating(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        setIsLocating(false);
+      },
+      () => {
+        setLocationError("Could not get your location. Check browser permissions.");
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 60000,
+        timeout: 10000,
+      },
+    );
+  };
 
   const events = useMemo(() => {
-    const inTimeRange = DUMMY_EVENTS.filter((event) =>
-      isInRange(event.startTime, range, now, customStart, customEnd),
+    const inTimeRange = sourceEvents
+      .filter((event) => isEventNotPast(event, now))
+      .filter((event) => isInRange(event.startTime, range, now, customStart, customEnd));
+    const filteredByDashboardFilters = filterEvents(inTimeRange, filters);
+
+    const withTravel = userLocation
+      ? filteredByDashboardFilters.map((event) => {
+          const distanceMiles = distanceMilesBetween(userLocation, {
+            latitude: event.position[0],
+            longitude: event.position[1],
+          });
+          const travel = estimateTravel(distanceMiles);
+          return {
+            ...event,
+            distanceMiles: travel.distanceMiles,
+            walkMinutes: travel.walkMinutes,
+            bikeMinutes: travel.bikeMinutes,
+          };
+        })
+      : filteredByDashboardFilters;
+
+    const prioritySorter = friendPriority && ratingPriority
+      ? compareFriendsAndRating
+      : friendPriority
+        ? compareFriendsOnly
+        : ratingPriority
+          ? compareRatingOnly
+          : null;
+
+    if (nearestOnly && userLocation) {
+      return [...withTravel]
+        .sort((a, b) => {
+          const byDistance =
+            (a.distanceMiles ?? Number.POSITIVE_INFINITY) -
+            (b.distanceMiles ?? Number.POSITIVE_INFINITY);
+          if (byDistance !== 0) return byDistance;
+          return prioritySorter ? prioritySorter(a, b) : compareFriendsOnly(a, b);
+        })
+        .slice(0, 10);
+    }
+
+    if (prioritySorter) {
+      return [...withTravel].sort(prioritySorter);
+    }
+
+    return [...withTravel].sort(
+      (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
     );
+  }, [
+    filters,
+    sourceEvents,
+    range,
+    now,
+    customStart,
+    customEnd,
+    userLocation,
+    nearestOnly,
+    friendPriority,
+    ratingPriority,
+  ]);
 
-    const selectedCategories = selectedPriorityFilters.filter(
-      (item): item is EventCategory => item !== "freeAdmission",
-    );
-    const freeAdmissionSelected =
-      selectedPriorityFilters.includes("freeAdmission");
+  const targetAudienceOptions = useMemo(
+    () => Array.from(new Set(sourceEvents.flatMap((event) => event.targetAudience ?? []))).sort(),
+    [sourceEvents]
+  );
+  const topicOptions = useMemo(
+    () => Array.from(new Set(sourceEvents.flatMap((event) => event.topics ?? []))).sort(),
+    [sourceEvents]
+  );
+  const eventTypeOptions = useMemo(
+    () => Array.from(new Set(sourceEvents.flatMap((event) => event.types ?? []))).sort(),
+    [sourceEvents]
+  );
 
-    const sorted = [...inTimeRange].sort((a, b) => {
-      const aSelectedCategory = selectedCategories.includes(a.category);
-      const bSelectedCategory = selectedCategories.includes(b.category);
-      const aSelectedFree = freeAdmissionSelected && a.freeAdmission;
-      const bSelectedFree = freeAdmissionSelected && b.freeAdmission;
+  const chipClass = (selected: boolean) =>
+    `rounded-full border px-3 py-1.5 text-sm transition-all duration-200 hover:scale-105 ${
+      selected
+        ? "border-blue-400 bg-blue-500/30 text-blue-100"
+        : "border-border/70 bg-background/50 text-foreground hover:bg-muted/70"
+    }`;
 
-      const aIsPriority = aSelectedCategory || aSelectedFree;
-      const bIsPriority = bSelectedCategory || bSelectedFree;
-      if (aIsPriority !== bIsPriority) return aIsPriority ? -1 : 1;
-
-      if (aSelectedCategory && bSelectedCategory) {
-        const rankA = getCategoryRank(a.category, ranking);
-        const rankB = getCategoryRank(b.category, ranking);
-        if (rankA !== rankB) return rankA - rankB;
-      } else if (aSelectedCategory !== bSelectedCategory) {
-        return aSelectedCategory ? -1 : 1;
-      }
-
-      if (aSelectedFree !== bSelectedFree) return aSelectedFree ? -1 : 1;
-
-      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+  const toggleArrayFilter = (key: "eventTopic" | "eventTypes", value: string) => {
+    const currentValues = filters[key];
+    const nextValues = currentValues.includes(value)
+      ? currentValues.filter((item) => item !== value)
+      : [...currentValues, value];
+    setFilters({
+      ...filters,
+      [key]: nextValues,
     });
-
-    return sorted;
-  }, [range, now, customStart, customEnd, selectedPriorityFilters, ranking]);
-
-  const togglePriorityFilter = (value: PriorityFilter) => {
-    setSelectedPriorityFilters((prev) =>
-      prev.includes(value)
-        ? prev.filter((item) => item !== value)
-        : [...prev, value],
-    );
   };
 
   return (
@@ -189,17 +419,17 @@ export default function UpcomingEventsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Popover open={categoryFilterOpen} onOpenChange={setCategoryFilterOpen}>
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   className="rounded-full border-border bg-card/70 px-4 backdrop-blur-sm"
                 >
                   <Filter className="mr-2 h-4 w-4" />
-                  Category filter
-                  {activePriorityCount > 0 ? (
+                  Filter
+                  {activeFilterCount > 0 ? (
                     <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground">
-                      {activePriorityCount}
+                      {activeFilterCount}
                     </span>
                   ) : null}
                 </Button>
@@ -208,27 +438,66 @@ export default function UpcomingEventsPage() {
                 align="end"
                 className="w-[min(92vw,24rem)] rounded-2xl border border-border/70 bg-card/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)] backdrop-blur-md"
               >
-                <p className="mb-3 text-xs text-muted-foreground">
-                  These options prioritize events first, but do not hide other events.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {CATEGORY_FILTER_OPTIONS.map((option) => {
-                    const selected = selectedPriorityFilters.includes(option.value);
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => togglePriorityFilter(option.value)}
-                        className={`rounded-full border px-3 py-1.5 text-sm transition-all duration-200 hover:scale-105 ${
-                          selected
-                            ? "border-blue-400 bg-blue-500/30 text-blue-100"
-                            : "border-border/70 bg-background/50 text-foreground hover:bg-muted/70"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
+                <div className="space-y-4">
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Event target audience
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {targetAudienceOptions.map((option) => {
+                        const selected = filters.eventTargetAudience.includes(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() =>
+                              setFilters({
+                                ...filters,
+                                eventTargetAudience: selected ? [] : [option],
+                              })
+                            }
+                            className={chipClass(selected)}
+                          >
+                            {option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Event topic
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {topicOptions.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => toggleArrayFilter("eventTopic", option)}
+                          className={chipClass(filters.eventTopic.includes(option))}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Event types
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {eventTypeOptions.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => toggleArrayFilter("eventTypes", option)}
+                          className={chipClass(filters.eventTypes.includes(option))}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </PopoverContent>
             </Popover>
@@ -293,8 +562,45 @@ export default function UpcomingEventsPage() {
                 ) : null}
               </PopoverContent>
             </Popover>
+            <Button
+              variant={nearestOnly ? "default" : "outline"}
+              className="rounded-full border-border px-4"
+              onClick={() => {
+                if (!nearestOnly && !userLocation) {
+                  requestLocation();
+                }
+                setNearestOnly((prev) => !prev);
+              }}
+            >
+              <LocateFixed className="mr-2 h-4 w-4" />
+              {nearestOnly ? "Nearest on" : "Nearest"}
+            </Button>
+            <Button
+              variant={friendPriority ? "default" : "outline"}
+              className="rounded-full border-border px-4"
+              onClick={() => setFriendPriority((prev) => !prev)}
+            >
+              Friends priority
+            </Button>
+            <Button
+              variant={ratingPriority ? "default" : "outline"}
+              className="rounded-full border-border px-4"
+              onClick={() => setRatingPriority((prev) => !prev)}
+            >
+              Rating priority
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-full border-border bg-card/70 px-4 backdrop-blur-sm"
+              onClick={requestLocation}
+            >
+              {isLocating ? "Getting location..." : userLocation ? "Refresh location" : "Use my location"}
+            </Button>
           </div>
         </div>
+        {locationError ? (
+          <p className="text-xs text-destructive">{locationError}</p>
+        ) : null}
 
         <Card className="border-border/70 bg-card/80">
           <CardHeader className="pb-3">
@@ -306,7 +612,11 @@ export default function UpcomingEventsPage() {
           <CardContent className="pt-0">
             {events.length === 0 ? (
               <div className="rounded-xl border border-border bg-muted/30 p-6 text-sm text-muted-foreground">
-                <p>No upcoming events match the current filters.</p>
+                <p>
+                  {isLoading
+                    ? "Loading events from UCSB Localist..."
+                    : "No upcoming events match the current filters."}
+                </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button asChild variant="outline" className="rounded-full border-border">
                     <Link href="/dashboard">View map</Link>

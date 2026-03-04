@@ -8,9 +8,12 @@ export const metadata = {
 
 export default function ProfilePage() {
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <div className="relative flex min-h-dvh flex-col bg-background">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_40%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_38%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.12),transparent_35%)]" />
       <DashboardHeader />
-      <ProfileClient />
+      <div className="relative z-10">
+        <ProfileClient />
+      </div>
     </div>
   );
 }

@@ -61,10 +61,10 @@ export function AddFriendSearch({
   const showDropdown = isOpen && query.trim().length > 0;
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
+    <div ref={containerRef} className={cn("relative z-50", className)}>
     <Card
       className={cn(
-        "border-border/70 bg-gradient-to-r from-card/90 via-card/70 to-card/90 shadow-[0_8px_30px_rgba(0,0,0,0.25)] backdrop-blur-sm transition-all duration-300 focus-within:scale-[1.01] focus-within:border-primary/50"
+        "overflow-visible border-border/70 bg-gradient-to-r from-card/90 via-card/70 to-card/90 shadow-[0_8px_30px_rgba(0,0,0,0.25)] backdrop-blur-sm transition-all duration-300 focus-within:scale-[1.01] focus-within:border-primary/50"
       )}
     >
       <CardContent className="p-4 sm:p-5">
@@ -97,7 +97,7 @@ export function AddFriendSearch({
           {showDropdown && (
             <ul
               role="listbox"
-              className="absolute top-full left-0 right-0 z-20 mt-1 max-h-56 overflow-auto rounded-lg border border-border/70 bg-card/95 py-1 shadow-xl backdrop-blur"
+              className="absolute top-full left-0 right-0 z-30 mt-1 max-h-[11rem] overflow-y-auto overflow-x-hidden rounded-lg border border-border/70 bg-card/95 py-1 shadow-xl backdrop-blur"
             >
               {matches.length === 0 ? (
                 <li className="px-4 py-3 text-sm text-muted-foreground">

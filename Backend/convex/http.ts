@@ -9,12 +9,6 @@ declare const process: {
 const http = httpRouter();
 
 type JsonRecord = Record<string, unknown>;
-type EmailPayload = {
-  to: string;
-  subject: string;
-  text: string;
-  html: string;
-};
 
 function corsHeaders() {
   return {
@@ -67,44 +61,6 @@ function parseStringField(body: JsonRecord, field: string) {
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email.trim());
-}
-
-async function sendEmail(payload: EmailPayload) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM_ADDRESS ?? "Gaucho RSVP <onboarding@resend.dev>";
-
-  if (!apiKey) {
-    return {
-      ok: false,
-      error:
-        "Missing RESEND_API_KEY. Set it with `npx convex env set RESEND_API_KEY ...`.",
-    };
-  }
-
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: payload.to,
-      subject: payload.subject,
-      html: payload.html,
-      text: payload.text,
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    return {
-      ok: false,
-      error: `Email provider error: ${errBody}`,
-    };
-  }
-
-  return { ok: true as const };
 }
 
 function randomHex(size = 16) {
@@ -234,6 +190,42 @@ http.route({
 
 http.route({
   path: "/blcok",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/event/rsvp",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/event/engagement",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/event/engagement/batch",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/event/friends-attendance",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/event/reviews",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
+  path: "/event/review-image",
   method: "OPTIONS",
   handler: httpAction(async () => optionsResponse()),
 });
@@ -377,39 +369,19 @@ http.route({
         return jsonResponse({ error: "Username is already in use." }, 409);
       }
 
-      const verificationCode = String(
-        Math.floor(100000 + Math.random() * 900000)
-      );
-      const expiresAt = Date.now() + 15 * 60 * 1000;
-      await ctx.runMutation(internal.auth.createEmailVerificationCode, {
-        userId: String(user.userId),
-        email,
-        code: verificationCode,
-        expiresAt,
-      });
-
-      const emailDelivery = await sendEmail({
-        to: email,
-        subject: "Verify your Gaucho RSVP account",
-        text: `Your verification code is ${verificationCode}. It expires in 15 minutes.`,
-        html: `<p>Your verification code is <strong>${verificationCode}</strong>.</p><p>It expires in 15 minutes.</p>`,
-      });
-
       return jsonResponse(
         {
           message:
             user.kind === "updated_unverified"
-              ? "Signup details refreshed. Verify your email with the new code."
+              ? "Signup details refreshed."
               : "Signup successful.",
-          requiresEmailVerification: true,
-          verificationEmailSent: emailDelivery.ok,
-          emailDeliveryError: emailDelivery.ok ? null : emailDelivery.error,
+          requiresEmailVerification: false,
           user: {
             id: user.userId,
             email: user.email,
             username: user.username,
             authProvider: "local",
-            emailVerified: false,
+            emailVerified: true,
           },
         },
         201,
@@ -487,17 +459,6 @@ http.route({
     if (computedHash !== user.passwordHash) {
       return jsonResponse({ error: "Invalid credentials." }, 401);
     }
-    const isEmailVerified = user.emailVerified ?? user.authProvider === "google";
-    if (!isEmailVerified) {
-      return jsonResponse(
-        {
-          error:
-            "Email not verified. Please verify your email with the code we sent before logging in.",
-        },
-        403
-      );
-    }
-
     return jsonResponse({
       message: "Login successful.",
       user: {
@@ -505,7 +466,7 @@ http.route({
         email: user.email,
         username: user.username,
         authProvider: user.authProvider,
-        emailVerified: isEmailVerified,
+        emailVerified: true,
       },
     });
   }),
@@ -514,36 +475,11 @@ http.route({
 http.route({
   path: "/verify-email",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    let body: JsonRecord;
-    try {
-      body = (await request.json()) as JsonRecord;
-    } catch {
-      return jsonResponse({ error: "Invalid JSON payload." }, 400);
-    }
-
-    const email = parseStringField(body, "email");
-    const code = parseStringField(body, "code");
-    if (!email || !code) {
-      return jsonResponse({ error: "email and code are required." }, 400);
-    }
-    if (!isValidEmail(email)) {
-      return jsonResponse({ error: "Please enter a valid email address." }, 400);
-    }
-
-    try {
-      const user = await ctx.runMutation(internal.auth.verifyEmailCode, {
-        email,
-        code,
-      });
-      return jsonResponse({
-        message: "Email verified successfully.",
-        user,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not verify email.";
-      return jsonResponse({ error: message }, 400);
-    }
+  handler: httpAction(async () => {
+    return jsonResponse({
+      message: "Email verification is disabled.",
+      user: null,
+    });
   }),
 });
 
@@ -577,8 +513,11 @@ http.route({
             id: number;
             title: string;
             description_text?: string;
+            description?: string;
+            photo_url?: string;
             location_name?: string;
             address?: string | null;
+            allows_attendance?: boolean;
             free?: boolean;
             geo?: {
               latitude?: string | null;
@@ -589,9 +528,11 @@ http.route({
               event_instance?: {
                 start?: string;
                 end?: string | null;
+                num_attending?: number;
               };
             }>;
             filters?: {
+              event_target_audience?: Array<{ name: string }>;
               event_topic?: Array<{ name: string }>;
               event_types?: Array<{ name: string }>;
             };
@@ -625,6 +566,8 @@ http.route({
               return null;
             }
 
+            const targetAudience =
+              event.filters?.event_target_audience?.map((item) => item.name) ?? [];
             const topics = event.filters?.event_topic?.map((t) => t.name) ?? [];
             const types = event.filters?.event_types?.map((t) => t.name) ?? [];
 
@@ -632,13 +575,18 @@ http.route({
               id: event.id,
               title: event.title,
               description: event.description_text ?? "",
+              descriptionHtml: event.description ?? "",
+              photoUrl: event.photo_url ?? null,
               locationName: event.location_name ?? "",
               address: event.address ?? "",
+              allowsAttendance: !!event.allows_attendance,
               free: !!event.free,
               startTime: instance?.start ?? null,
               endTime: instance?.end ?? null,
+              localistNumAttending: instance?.num_attending ?? 0,
               latitude: lat,
               longitude: lng,
+              targetAudience,
               topics,
               types,
               url: event.localist_url ?? null,
@@ -651,6 +599,264 @@ http.route({
       const message =
         error instanceof Error ? error.message : "Unexpected events error.";
       return jsonResponse({ error: message }, 500);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/rsvp",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const requestUrl = new URL(request.url);
+    const eventId = requestUrl.searchParams.get("eventId");
+    const userId = requestUrl.searchParams.get("userId");
+    if (!eventId) {
+      return jsonResponse({ error: "eventId is required." }, 400);
+    }
+
+    try {
+      const summary = await ctx.runQuery(internal.auth.getEventRsvpSummary, {
+        eventId,
+        userId: userId ?? undefined,
+      });
+      return jsonResponse(summary);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load RSVP summary.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/engagement",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const requestUrl = new URL(request.url);
+    const eventId = requestUrl.searchParams.get("eventId");
+    const userId = requestUrl.searchParams.get("userId");
+    if (!eventId) {
+      return jsonResponse({ error: "eventId is required." }, 400);
+    }
+
+    try {
+      const summary = await ctx.runQuery(internal.auth.getEventEngagementSummary, {
+        eventId,
+        userId: userId ?? undefined,
+      });
+      return jsonResponse(summary);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load event engagement.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/engagement/batch",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const requestUrl = new URL(request.url);
+    const eventIdsParam = requestUrl.searchParams.get("eventIds");
+    if (!eventIdsParam) {
+      return jsonResponse({ error: "eventIds is required." }, 400);
+    }
+
+    const eventIds = eventIdsParam
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (eventIds.length === 0) {
+      return jsonResponse({ error: "eventIds is required." }, 400);
+    }
+    if (eventIds.length > 300) {
+      return jsonResponse({ error: "Too many eventIds provided." }, 400);
+    }
+
+    try {
+      const summary = await ctx.runQuery(internal.auth.getEventsEngagementBatch, {
+        eventIds,
+      });
+      return jsonResponse(summary);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load event engagement batch.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/friends-attendance",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const requestUrl = new URL(request.url);
+    const userId = requestUrl.searchParams.get("userId");
+    const eventIdsParam = requestUrl.searchParams.get("eventIds");
+
+    if (!userId) {
+      return jsonResponse({ error: "userId is required." }, 400);
+    }
+    if (!eventIdsParam) {
+      return jsonResponse({ error: "eventIds is required." }, 400);
+    }
+
+    const eventIds = eventIdsParam
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (eventIds.length === 0) {
+      return jsonResponse({ error: "eventIds is required." }, 400);
+    }
+    if (eventIds.length > 300) {
+      return jsonResponse({ error: "Too many eventIds provided." }, 400);
+    }
+
+    try {
+      const summary = await ctx.runQuery(internal.auth.getFriendsEventAttendance, {
+        userId,
+        eventIds,
+      });
+      return jsonResponse(summary);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load friends attendance.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/rsvp",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: JsonRecord;
+    try {
+      body = (await request.json()) as JsonRecord;
+    } catch {
+      return jsonResponse({ error: "Invalid JSON payload." }, 400);
+    }
+
+    const eventId = parseStringField(body, "eventId");
+    const userId = parseStringField(body, "userId");
+    if (!eventId || !userId) {
+      return jsonResponse({ error: "eventId and userId are required." }, 400);
+    }
+
+    try {
+      const rsvp = await ctx.runMutation(internal.auth.toggleEventRsvp, {
+        eventId,
+        userId,
+      });
+      const summary = await ctx.runQuery(internal.auth.getEventRsvpSummary, {
+        eventId,
+        userId,
+      });
+      return jsonResponse({
+        userHasRsvped: rsvp.userHasRsvped,
+        count: summary.count,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not update RSVP status.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/review-image",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const formData = await request.formData();
+      const image = formData.get("image");
+      if (!(image instanceof Blob)) {
+        return jsonResponse({ error: "image file is required." }, 400);
+      }
+
+      const storageId = await ctx.storage.store(image);
+      const imageUrl = await ctx.storage.getUrl(storageId);
+      return jsonResponse({
+        imageStorageId: String(storageId),
+        imageUrl: imageUrl ?? null,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not upload review image.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/reviews",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const eventId = new URL(request.url).searchParams.get("eventId");
+    if (!eventId) {
+      return jsonResponse({ error: "eventId is required." }, 400);
+    }
+
+    try {
+      const result = await ctx.runQuery(internal.auth.listEventReviews, { eventId });
+      return jsonResponse(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load event reviews.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/event/reviews",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: JsonRecord;
+    try {
+      body = (await request.json()) as JsonRecord;
+    } catch {
+      return jsonResponse({ error: "Invalid JSON payload." }, 400);
+    }
+
+    const eventId = parseStringField(body, "eventId");
+    const userId = parseStringField(body, "userId");
+    const reviewText = parseStringField(body, "reviewText");
+    const imageStorageId = parseStringField(body, "imageStorageId") ?? undefined;
+    const imageUrl = parseStringField(body, "imageUrl") ?? undefined;
+    const ratingValue = body.rating;
+    const rating =
+      typeof ratingValue === "number"
+        ? ratingValue
+        : typeof ratingValue === "string"
+          ? Number(ratingValue)
+          : NaN;
+
+    if (!eventId || !userId || !reviewText || Number.isNaN(rating)) {
+      return jsonResponse(
+        { error: "eventId, userId, rating, and reviewText are required." },
+        400
+      );
+    }
+
+    try {
+      await ctx.runMutation(internal.auth.upsertEventReview, {
+        eventId,
+        userId,
+        rating,
+        reviewText,
+        imageStorageId,
+        imageUrl,
+      });
+
+      const result = await ctx.runQuery(internal.auth.listEventReviews, { eventId });
+      return jsonResponse(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not save event review.";
+      return jsonResponse({ error: message }, 400);
     }
   }),
 });
@@ -782,53 +988,8 @@ http.route({
 http.route({
   path: "/friend/notify-email",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    let body: JsonRecord;
-    try {
-      body = (await request.json()) as JsonRecord;
-    } catch {
-      return jsonResponse({ error: "Invalid JSON payload." }, 400);
-    }
-
-    const requesterId = parseStringField(body, "requesterId");
-    const addresseeId = parseStringField(body, "addresseeId");
-    if (!requesterId || !addresseeId) {
-      return jsonResponse(
-        { error: "requesterId and addresseeId are required." },
-        400
-      );
-    }
-
-    const requester = await ctx.runQuery(internal.auth.getUserById, {
-      userId: requesterId,
-    });
-    const addressee = await ctx.runQuery(internal.auth.getUserById, {
-      userId: addresseeId,
-    });
-
-    if (!requester || !addressee) {
-      return jsonResponse({ error: "Requester or addressee not found." }, 404);
-    }
-
-    if (!addressee.emailVerified) {
-      return jsonResponse(
-        { error: "Target user email is not verified. No email notification sent." },
-        400
-      );
-    }
-
-    const friendRequestEmail = await sendEmail({
-      to: addressee.email,
-      subject: "You have a new Gaucho RSVP friend request",
-      text: `${requester.username} sent you a friend request on Gaucho RSVP.`,
-      html: `<p><strong>${requester.username}</strong> sent you a friend request on Gaucho RSVP.</p>`,
-    });
-
-    if (!friendRequestEmail.ok) {
-      return jsonResponse({ error: friendRequestEmail.error }, 400);
-    }
-
-    return jsonResponse({ message: "Friend request email sent." });
+  handler: httpAction(async () => {
+    return jsonResponse({ message: "Email notifications are disabled." });
   }),
 });
 
@@ -959,19 +1120,6 @@ http.route({
         text,
       });
 
-      const sender = await ctx.runQuery(internal.auth.getUserById, { userId: senderId });
-      const recipient = await ctx.runQuery(internal.auth.getUserById, {
-        userId: recipientId,
-      });
-      if (sender && recipient && recipient.emailVerified) {
-        await sendEmail({
-          to: recipient.email,
-          subject: `New message from ${sender.username}`,
-          text: `${sender.username} sent you a new message on Gaucho RSVP: "${text}"`,
-          html: `<p><strong>${sender.username}</strong> sent you a new message on Gaucho RSVP:</p><p>${text}</p>`,
-        });
-      }
-
       return jsonResponse({ message: "Message sent.", messageId: result.messageId });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not send message.";
@@ -1018,19 +1166,6 @@ http.route({
         imageStorageId: String(storageId),
         imageUrl: imageUrl ?? undefined,
       });
-
-      const sender = await ctx.runQuery(internal.auth.getUserById, { userId: senderId });
-      const recipient = await ctx.runQuery(internal.auth.getUserById, {
-        userId: recipientId,
-      });
-      if (sender && recipient && recipient.emailVerified) {
-        await sendEmail({
-          to: recipient.email,
-          subject: `New image message from ${sender.username}`,
-          text: `${sender.username} sent you an image message on Gaucho RSVP.`,
-          html: `<p><strong>${sender.username}</strong> sent you an image message on Gaucho RSVP.</p>`,
-        });
-      }
 
       return jsonResponse({
         message: "Image message sent.",
@@ -1232,8 +1367,10 @@ http.route({
         googleId: googleProfile.sub,
       });
 
+      const postAuthPath =
+        oauthState.flow === "signup" ? "/signup/preferences" : "/dashboard";
       return Response.redirect(
-        frontendRedirect("/dashboard", {
+        frontendRedirect(postAuthPath, {
           uid: String(user._id),
           username: user.username,
           email: user.email,

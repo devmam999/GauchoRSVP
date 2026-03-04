@@ -77,4 +77,23 @@ export default defineSchema({
   })
     .index("by_blocker", ["blockerId"])
     .index("by_blocked", ["blockedId"]),
+  eventRsvps: defineTable({
+    eventId: v.string(),
+    userId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_event", ["eventId"])
+    .index("by_user", ["userId"]),
+  eventReviews: defineTable({
+    eventId: v.string(),
+    userId: v.string(),
+    rating: v.number(),
+    reviewText: v.string(),
+    imageStorageId: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_event", ["eventId"])
+    .index("by_user", ["userId"]),
 });

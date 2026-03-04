@@ -6,27 +6,37 @@ import { SidebarPanel } from "./sidebar-panel";
 import { EventMapView } from "./map/event-map";
 import { filterEvents } from "@/lib/dashboard/filter-events";
 import type { CampusEvent, EventFilters } from "@/lib/dashboard/types";
+import { distanceMilesBetween, estimateTravel } from "@/lib/dashboard/travel";
+import { loadFriendAttendanceForEvents } from "@/lib/dashboard/friend-attendance";
+import { loadEngagementForEvents } from "@/lib/dashboard/engagement";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_FILTERS: EventFilters = {
-  categories: [],
-  foodProvided: "any",
-  freeAdmissionOnly: false,
-  timeRange: "all",
+  eventTargetAudience: [],
+  eventTopic: [],
+  eventTypes: [],
+  nearestOnly: false,
+  friendPriority: false,
+  ratingPriority: false,
 };
 
 type BackendEvent = {
   id: number;
   title: string;
   description: string;
+  descriptionHtml: string;
+  photoUrl: string | null;
   locationName: string;
   address: string | null;
+  allowsAttendance: boolean;
   free: boolean;
   startTime: string | null;
   endTime: string | null;
+  localistNumAttending: number;
   latitude: number;
   longitude: number;
+  targetAudience: string[];
   topics: string[];
   types: string[];
   url: string | null;
@@ -70,7 +80,66 @@ function mapBackendEventToCampusEvent(event: BackendEvent): CampusEvent {
     freeAdmission: event.free,
     rsvpLink: event.url ?? undefined,
     sourceLink: event.url ?? undefined,
+    description: event.description,
+    descriptionHtml: event.descriptionHtml,
+    photoUrl: event.photoUrl ?? undefined,
+    localistNumAttending: event.localistNumAttending,
+    allowsAttendance: event.allowsAttendance,
+    targetAudience: event.targetAudience,
+    topics: event.topics,
+    types: event.types,
   };
+}
+
+function isEventNotPast(event: CampusEvent, now: Date) {
+  const start = new Date(event.startTime);
+  if (Number.isNaN(start.getTime())) return false;
+
+  const end = event.endTime ? new Date(event.endTime) : null;
+  if (end && !Number.isNaN(end.getTime())) {
+    return end >= now;
+  }
+
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0
+  );
+  return start >= startOfToday;
+}
+
+function compareFriendsAndRating(a: CampusEvent, b: CampusEvent) {
+  const ratingA = a.engagementAverageRating ?? 0;
+  const ratingB = b.engagementAverageRating ?? 0;
+  const friendA = a.friendRsvpCount ?? 0;
+  const friendB = b.friendRsvpCount ?? 0;
+  const diff = Math.abs(ratingA - ratingB);
+
+  if (diff > 1) {
+    if (ratingA !== ratingB) return ratingB - ratingA;
+    if (friendA !== friendB) return friendB - friendA;
+  } else {
+    if (friendA !== friendB) return friendB - friendA;
+    if (ratingA !== ratingB) return ratingB - ratingA;
+  }
+
+  return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+}
+
+function compareFriendsOnly(a: CampusEvent, b: CampusEvent) {
+  const byFriends = (b.friendRsvpCount ?? 0) - (a.friendRsvpCount ?? 0);
+  if (byFriends !== 0) return byFriends;
+  return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+}
+
+function compareRatingOnly(a: CampusEvent, b: CampusEvent) {
+  const byRating = (b.engagementAverageRating ?? 0) - (a.engagementAverageRating ?? 0);
+  if (byRating !== 0) return byRating;
+  return compareFriendsOnly(a, b);
 }
 
 /**
@@ -83,6 +152,13 @@ export function DashboardLayout() {
   const [filters, setFilters] = useState<EventFilters>(DEFAULT_FILTERS);
   const [backendEvents, setBackendEvents] = useState<CampusEvent[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const now = useMemo(() => new Date(), []);
 
   useEffect(() => {
     const apiBaseUrl =
@@ -102,8 +178,13 @@ export function DashboardLayout() {
         const data = (await res.json()) as { events?: BackendEvent[] };
         if (!data.events || cancelled) return;
         const mapped = data.events.map(mapBackendEventToCampusEvent);
+        const withFriends = await loadFriendAttendanceForEvents(apiBaseUrl, mapped);
+        const withEngagement = await loadEngagementForEvents(
+          apiBaseUrl,
+          withFriends.events
+        );
         if (!cancelled) {
-          setBackendEvents(mapped);
+          setBackendEvents(withEngagement);
         }
       } catch {
         // ignore errors; backendEvents stays null
@@ -120,12 +201,94 @@ export function DashboardLayout() {
     };
   }, []);
 
-  const sourceEvents = backendEvents ?? [];
+  const sourceEvents = useMemo(
+    () => (backendEvents ?? []).filter((event) => isEventNotPast(event, now)),
+    [backendEvents, now]
+  );
+
+  const eventsWithTravel = useMemo(() => {
+    if (!userLocation) return sourceEvents;
+    return sourceEvents.map((event) => {
+      const distanceMiles = distanceMilesBetween(userLocation, {
+        latitude: event.position[0],
+        longitude: event.position[1],
+      });
+      const travel = estimateTravel(distanceMiles);
+      return {
+        ...event,
+        distanceMiles: travel.distanceMiles,
+        walkMinutes: travel.walkMinutes,
+        bikeMinutes: travel.bikeMinutes,
+      };
+    });
+  }, [sourceEvents, userLocation]);
 
   const filteredEvents = useMemo(
-    () => filterEvents(sourceEvents, filters),
-    [sourceEvents, filters]
+    () => filterEvents(eventsWithTravel, filters),
+    [eventsWithTravel, filters]
   );
+
+  const visibleEvents = useMemo(() => {
+    const friendPriority = !!filters.friendPriority;
+    const ratingPriority = !!filters.ratingPriority;
+    const prioritySorter = friendPriority && ratingPriority
+      ? compareFriendsAndRating
+      : friendPriority
+        ? compareFriendsOnly
+        : ratingPriority
+          ? compareRatingOnly
+          : null;
+
+    if (!filters.nearestOnly || !userLocation) {
+      return prioritySorter
+        ? [...filteredEvents].sort(prioritySorter)
+        : [...filteredEvents].sort(
+            (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+          );
+    }
+    return [...filteredEvents]
+      .sort((a, b) => {
+        const byDistance =
+          (a.distanceMiles ?? Number.POSITIVE_INFINITY) -
+          (b.distanceMiles ?? Number.POSITIVE_INFINITY);
+        if (byDistance !== 0) return byDistance;
+        return prioritySorter ? prioritySorter(a, b) : compareFriendsOnly(a, b);
+      })
+      .slice(0, 10);
+  }, [
+    filteredEvents,
+    filters.friendPriority,
+    filters.nearestOnly,
+    filters.ratingPriority,
+    userLocation,
+  ]);
+
+  const handleRequestLocation = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationError("Geolocation is not supported on this browser.");
+      return;
+    }
+    setIsLocating(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        setIsLocating(false);
+      },
+      () => {
+        setLocationError("Could not get your location. Check browser permissions.");
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 60000,
+        timeout: 10000,
+      }
+    );
+  };
 
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background">
@@ -147,7 +310,11 @@ export function DashboardLayout() {
           className="max-sm:pt-12 max-sm:z-20"
           filters={filters}
           onFiltersChange={setFilters}
-          events={filteredEvents}
+          onRequestLocation={handleRequestLocation}
+          isLocating={isLocating}
+          hasLocation={!!userLocation}
+          locationError={locationError}
+          allEvents={eventsWithTravel}
         />
 
         <main
@@ -158,7 +325,7 @@ export function DashboardLayout() {
             <EventMapView
               darkTiles
               className="h-full w-full"
-              events={filteredEvents}
+              events={visibleEvents}
             />
           </div>
 

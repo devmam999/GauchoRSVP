@@ -9,7 +9,7 @@ import {
   Popup,
 } from "react-leaflet";
 import L from "leaflet";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { CampusEvent } from "@/lib/dashboard/types";
 
@@ -64,7 +64,11 @@ function EventPopupContent({ event }: { event: CampusEvent }) {
   const linkLabel = event.rsvpLink ? "RSVP / Register" : "More info";
 
   return (
-    <div className="min-w-[200px] max-w-[280px] sm:min-w-[240px] sm:max-w-[320px] text-left">
+    <div
+      className="min-w-[200px] max-w-[280px] sm:min-w-[240px] sm:max-w-[320px] text-left"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <h3 className="font-semibold text-primary text-base mb-1.5">
         {event.name}
       </h3>
@@ -117,11 +121,76 @@ function EventPopupContent({ event }: { event: CampusEvent }) {
   );
 }
 
-function MapMarker({ event }: { event: CampusEvent }) {
+function GroupedEventPopupContent({ events }: { events: CampusEvent[] }) {
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const selectedEvent =
+    events.find((event) => event.id === selectedEventId) ?? events[0] ?? null;
+
+  if (!selectedEvent) return null;
+
+  if (events.length === 1) {
+    return <EventPopupContent event={selectedEvent} />;
+  }
+
+  if (!selectedEventId) {
+    return (
+      <div
+        className="min-w-[220px] max-w-[320px]"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-2 text-sm font-semibold text-primary">
+          Events at this location ({events.length})
+        </h3>
+        <div className="space-y-1.5">
+          {events.map((event) => (
+            <button
+              key={event.id}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSelectedEventId(event.id);
+              }}
+              className="w-full rounded-md border border-border bg-card/70 px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+            >
+              {event.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Marker position={event.position}>
+    <div
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedEventId(null);
+        }}
+        className="mb-2 text-xs font-medium text-primary underline underline-offset-2"
+      >
+        ← Back to all events at this location
+      </button>
+      <EventPopupContent event={selectedEvent} />
+    </div>
+  );
+}
+
+function MapMarker({ events }: { events: CampusEvent[] }) {
+  const firstEvent = events[0];
+  if (!firstEvent) return null;
+
+  return (
+    <Marker position={firstEvent.position}>
       <Popup>
-        <EventPopupContent event={event} />
+        <GroupedEventPopupContent events={events} />
       </Popup>
     </Marker>
   );
@@ -144,6 +213,19 @@ export function EventMapView({
   events = [],
 }: EventMapViewProps) {
   useFixLeafletIcon();
+  const groupedEvents = useMemo(() => {
+    const groups = new Map<string, CampusEvent[]>();
+    for (const event of events) {
+      const key = `${event.position[0]},${event.position[1]}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.push(event);
+      } else {
+        groups.set(key, [event]);
+      }
+    }
+    return Array.from(groups.values());
+  }, [events]);
 
   return (
     <div
@@ -166,9 +248,13 @@ export function EventMapView({
           attribution={OSM_ATTRIBUTION}
           url={darkTiles ? DARK_TILE_URL : LIGHT_TILE_URL}
         />
-        {events.map((event) => (
-          <MapMarker key={event.id} event={event} />
-        ))}
+        {groupedEvents.map((group) => {
+          const first = group[0];
+          const groupKey = first
+            ? `${first.position[0]},${first.position[1]}`
+            : "empty-group";
+          return <MapMarker key={groupKey} events={group} />;
+        })}
       </MapContainer>
     </div>
   );

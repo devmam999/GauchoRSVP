@@ -299,7 +299,8 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="relative min-h-dvh overflow-hidden bg-background">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_40%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_38%),radial-gradient(circle_at_bottom,rgba(14,165,233,0.12),transparent_35%)]" />
       <DashboardHeader />
       <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-1 gap-4 px-3 pb-6 pt-4 sm:px-5 sm:pt-6">
         <section className="w-full max-w-sm rounded-2xl border border-border/70 bg-card/75 p-3 shadow-[0_16px_50px_rgba(0,0,0,0.35)] backdrop-blur-md">

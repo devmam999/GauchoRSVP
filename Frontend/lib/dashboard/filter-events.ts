@@ -1,43 +1,32 @@
 import type { CampusEvent, EventFilters } from "./types";
 
-function eventInTimeRange(startTime: string, timeRange: EventFilters["timeRange"]): boolean {
-  const now = new Date();
-  const start = new Date(startTime);
-  if (timeRange === "all") return start >= now;
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfToday = new Date(startOfToday);
-  endOfToday.setDate(endOfToday.getDate() + 1);
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(endOfWeek.getDate() + 7);
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  if (timeRange === "today") return start >= now && start < endOfToday;
-  if (timeRange === "week") return start >= now && start < endOfWeek;
-  if (timeRange === "month") return start >= now && start < startOfNextMonth;
-  return true;
-}
-
 export function filterEvents(
   events: CampusEvent[],
   filters: EventFilters
 ): CampusEvent[] {
   return events.filter((event) => {
+    const targetAudience = event.targetAudience ?? [];
+    const topics = event.topics ?? [];
+    const types = event.types ?? [];
+
     if (
-      filters.categories.length > 0 &&
-      !filters.categories.includes(event.category)
+      filters.eventTargetAudience.length > 0 &&
+      !filters.eventTargetAudience.some((selected) =>
+        targetAudience.includes(selected)
+      )
     ) {
       return false;
     }
-    if (filters.foodProvided !== "any" && event.foodProvided !== filters.foodProvided) {
+    if (
+      filters.eventTopic.length > 0 &&
+      !filters.eventTopic.some((selected) => topics.includes(selected))
+    ) {
       return false;
     }
-    if (filters.freeAdmissionOnly && !event.freeAdmission) {
-      return false;
-    }
-    if (!eventInTimeRange(event.startTime, filters.timeRange)) {
+    if (
+      filters.eventTypes.length > 0 &&
+      !filters.eventTypes.some((selected) => types.includes(selected))
+    ) {
       return false;
     }
     return true;

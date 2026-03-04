@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ErrorNotice } from "@/components/ui/error-notice";
 import { saveCurrentUser } from "@/lib/auth/current-user";
 import { ArrowRight, Mail, User, Lock, Eye, EyeOff } from "lucide-react";
 
@@ -13,15 +14,7 @@ export function SignupForm() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [verificationMessage, setVerificationMessage] = useState<string | null>(
-    null
-  );
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<
-    string | null
-  >(null);
-  const [verificationCode, setVerificationCode] = useState("");
   const [formData, setFormData] = useState({
     email: "",
     username: "",
@@ -55,26 +48,20 @@ export function SignupForm() {
       });
       const data = (await res.json()) as {
         error?: string;
-        requiresEmailVerification?: boolean;
-        verificationEmailSent?: boolean;
-        emailDeliveryError?: string | null;
         user?: { id: string; username: string; email: string };
       };
       if (!res.ok) {
-        setError(data.error ?? "Signup failed.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (data.requiresEmailVerification) {
-        setPendingVerificationEmail(formData.email);
-        setVerificationMessage(
-          data.verificationEmailSent
-            ? "We sent a verification code to your email. Enter it below to continue."
-            : `Account created, but we could not send email yet: ${
-                data.emailDeliveryError ?? "unknown email error"
-              }`
-        );
+        if (
+          res.status === 409 &&
+          (data.error?.toLowerCase().includes("email") ?? false) &&
+          formData.email.trim().length > 0
+        ) {
+          setError(
+            `You already have an account under this email ${formData.email}. Please login with your email`
+          );
+        } else {
+          setError(data.error ?? "Signup failed.");
+        }
         setIsSubmitting(false);
         return;
       }
@@ -88,55 +75,10 @@ export function SignupForm() {
       }
 
       setIsSubmitting(false);
-      router.push("/dashboard");
+      router.push("/signup/preferences");
     } catch {
       setIsSubmitting(false);
       setError("Unable to reach backend. Please try again.");
-    }
-  }
-
-  async function handleVerifyEmail() {
-    if (!pendingVerificationEmail || !verificationCode.trim()) {
-      setError("Enter your verification code.");
-      return;
-    }
-    if (!apiBaseUrl) {
-      setError("Missing NEXT_PUBLIC_CONVEX_HTTP_URL in frontend environment.");
-      return;
-    }
-
-    setError(null);
-    setIsVerifying(true);
-
-    try {
-      const res = await fetch(`${apiBaseUrl}/verify-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: pendingVerificationEmail,
-          code: verificationCode,
-        }),
-      });
-      const data = (await res.json()) as {
-        error?: string;
-        user?: { id: string; username: string; email: string };
-      };
-      if (!res.ok || !data.user) {
-        setError(data.error ?? "Could not verify code.");
-        setIsVerifying(false);
-        return;
-      }
-
-      saveCurrentUser({
-        id: data.user.id,
-        username: data.user.username,
-        email: data.user.email,
-      });
-      setIsVerifying(false);
-      router.push("/dashboard");
-    } catch {
-      setIsVerifying(false);
-      setError("Unable to verify code right now. Please try again.");
     }
   }
 
@@ -284,37 +226,12 @@ export function SignupForm() {
         )}
       </Button>
 
-      {pendingVerificationEmail ? (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="mb-2 text-sm text-foreground">
-            Verify <span className="font-medium">{pendingVerificationEmail}</span>
-          </p>
-          {verificationMessage ? (
-            <p className="mb-3 text-xs text-muted-foreground">
-              {verificationMessage}
-            </p>
-          ) : null}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              value={verificationCode}
-              onChange={(e) => setVerificationCode(e.target.value)}
-              placeholder="Enter 6-digit code"
-              className="h-10"
-            />
-            <Button
-              type="button"
-              onClick={handleVerifyEmail}
-              disabled={isVerifying}
-              className="h-10 sm:w-auto"
-            >
-              {isVerifying ? "Verifying..." : "Verify email"}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
       {error ? (
-        <p className="text-center text-sm text-red-500">{error}</p>
+        <ErrorNotice
+          title="Signup issue"
+          message={error}
+          onDismiss={() => setError(null)}
+        />
       ) : null}
 
       <p className="text-center text-sm text-muted-foreground">

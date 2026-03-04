@@ -13,7 +13,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ErrorNotice } from "@/components/ui/error-notice";
 import { clearCurrentUser, getCurrentUser } from "@/lib/auth/current-user";
@@ -21,7 +20,14 @@ import {
   loadStoredProfileImage,
   saveStoredProfileImage,
 } from "@/lib/auth/profile-image";
-import { EVENT_CATEGORIES, type UserProfile } from "@/lib/dashboard/types";
+import { loadAdditionalInfo } from "@/lib/auth/additional-info";
+import { type UserProfile } from "@/lib/dashboard/types";
+import {
+  EVENT_TOPIC_OPTIONS,
+  loadTopicRanking,
+  saveTopicRanking,
+  type EventTopicOption,
+} from "@/lib/user-preferences";
 import { Pencil } from "lucide-react";
 
 function buildDefaultProfile(params: {
@@ -86,6 +92,9 @@ export default function ProfileClient() {
   const [isEditing, setIsEditing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [topicRanking, setTopicRanking] = useState<EventTopicOption[]>([
+    ...EVENT_TOPIC_OPTIONS,
+  ]);
   const updateProfile = (updater: (prev: UserProfile) => UserProfile) => {
     setProfile((prev) => (prev ? updater(prev) : prev));
   };
@@ -117,13 +126,22 @@ export default function ProfileClient() {
         }
         if (!isMounted) return;
         const persistedImage = loadStoredProfileImage(payload.user.id);
+        const additionalInfo = loadAdditionalInfo(payload.user.id);
+        const storedTopicRanking = loadTopicRanking();
         setProfile(
-          buildDefaultProfile({
-            id: payload.user.id,
-            username: payload.user.username,
-            email: payload.user.email,
-          })
+          {
+            ...buildDefaultProfile({
+              id: payload.user.id,
+              username: payload.user.username,
+              email: payload.user.email,
+            }),
+            major: additionalInfo?.major ?? "",
+            year: additionalInfo?.year ?? "",
+          }
         );
+        if (storedTopicRanking && storedTopicRanking.length > 0) {
+          setTopicRanking(storedTopicRanking);
+        }
         if (persistedImage) {
           setProfile((prev) => (prev ? { ...prev, profileImageUrl: persistedImage } : prev));
         }
@@ -202,6 +220,17 @@ export default function ProfileClient() {
     }
   };
 
+  const moveTopic = (index: number, direction: "up" | "down") => {
+    setTopicRanking((prev) => {
+      const newIndex = direction === "up" ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+      saveTopicRanking(updated);
+      return updated;
+    });
+  };
+
   return (
     <main className="flex-1 px-4 py-6 sm:px-6">
       <div className="mx-auto flex max-w-4xl flex-col gap-6">
@@ -249,11 +278,6 @@ export default function ProfileClient() {
           </div>
           <div className="flex flex-col items-end gap-2 sm:items-end">
             <div className="flex flex-wrap justify-end gap-2">
-              {profile.homeBase && (
-                <Badge variant="outline" className="text-xs">
-                  Home base: {profile.homeBase}
-                </Badge>
-              )}
               <Badge variant="outline" className="text-xs">
                 Gaucho RSVP member
               </Badge>
@@ -346,27 +370,6 @@ export default function ProfileClient() {
               </div>
 
               <div>
-                <p className="text-muted-foreground">Home base</p>
-                {isEditing ? (
-                  <Input
-                    value={profile.homeBase ?? ""}
-                    onChange={(e) =>
-                      updateProfile((prev) => ({
-                        ...prev,
-                        homeBase: e.target.value,
-                      }))
-                    }
-                    placeholder="e.g. Isla Vista, CA"
-                    className="mt-1 h-9"
-                  />
-                ) : (
-                  <p className="font-medium text-foreground">
-                    {profile.homeBase ?? "Not set"}
-                  </p>
-                )}
-              </div>
-
-              <div>
                 <p className="text-muted-foreground">Bio</p>
                 {isEditing ? (
                   <Textarea
@@ -390,47 +393,52 @@ export default function ProfileClient() {
               <div>
                 <p className="text-muted-foreground">Preferred event types</p>
                 {isEditing ? (
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {EVENT_CATEGORIES.map((type) => (
-                      <label
-                        key={type}
-                        className="flex cursor-pointer items-center gap-2 text-xs text-foreground"
+                  <div className="mt-2 space-y-2">
+                    {topicRanking.map((topic, index) => (
+                      <div
+                        key={topic}
+                        className="flex items-center justify-between rounded-lg border border-border/70 bg-muted/40 px-3 py-2"
                       >
-                        <Checkbox
-                          checked={profile.preferredEventTypes.includes(type)}
-                          onCheckedChange={(checked) => {
-                            updateProfile((prev) => {
-                              const selected = prev.preferredEventTypes;
-                              if (checked) {
-                                if (selected.includes(type)) return prev;
-                                return {
-                                  ...prev,
-                                  preferredEventTypes: [...selected, type],
-                                };
-                              }
-                              return {
-                                ...prev,
-                                preferredEventTypes: selected.filter(
-                                  (t) => t !== type
-                                ),
-                              };
-                            });
-                          }}
-                          aria-label={type}
-                        />
-                        {type}
-                      </label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-primary">
+                            #{index + 1}
+                          </span>
+                          <span className="text-sm text-foreground">{topic}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 rounded-md px-2 text-xs"
+                            onClick={() => moveTopic(index, "up")}
+                            disabled={index === 0}
+                          >
+                            Up
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 rounded-md px-2 text-xs"
+                            onClick={() => moveTopic(index, "down")}
+                            disabled={index === topicRanking.length - 1}
+                          >
+                            Down
+                          </Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : (
                   <div className="mt-1 flex flex-wrap gap-1.5">
-                    {profile.preferredEventTypes.map((type) => (
+                    {topicRanking.map((type, index) => (
                       <Badge
                         key={type}
                         variant="outline"
                         className="text-xs font-normal"
                       >
-                        {type}
+                        #{index + 1} {type}
                       </Badge>
                     ))}
                   </div>

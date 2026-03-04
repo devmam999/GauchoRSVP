@@ -3,25 +3,31 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ArrowRight, GripVertical } from "lucide-react";
-import { saveCategoryRanking } from "@/lib/user-preferences";
-import type { EventCategory } from "@/lib/dashboard/types";
+import {
+  EVENT_TOPIC_OPTIONS,
+  saveTopicRanking,
+  type EventTopicOption,
+} from "@/lib/user-preferences";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { saveAdditionalInfo } from "@/lib/auth/additional-info";
 
 interface Category {
-  id: EventCategory;
+  id: EventTopicOption;
   label: string;
 }
 
 const DEFAULT_CATEGORIES: Category[] = [
-  { id: "Academic", label: "Academic" },
-  { id: "Social", label: "Social" },
-  { id: "Entertainment", label: "Entertainment" },
-  { id: "Sports", label: "Sports" },
+  ...EVENT_TOPIC_OPTIONS.map((topic) => ({ id: topic, label: topic })),
 ];
 
 export function RankingList() {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [major, setMajor] = useState("");
+  const [year, setYear] = useState("");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,15 +91,38 @@ export function RankingList() {
   async function handleDone() {
     setIsSubmitting(true);
 
-    saveCategoryRanking(categories.map((c) => c.id));
+    const user = getCurrentUser();
+    saveAdditionalInfo(user?.id ?? null, { major, year });
+    saveTopicRanking(categories.map((c) => c.id));
 
     await new Promise((resolve) => setTimeout(resolve, 400));
     setIsSubmitting(false);
-    router.push("/dashboard/upcoming");
+    router.push("/dashboard");
   }
 
   return (
     <div className="flex w-full flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="major">Major</Label>
+          <Input
+            id="major"
+            value={major}
+            onChange={(e) => setMajor(e.target.value)}
+            placeholder="e.g. Computer Science"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="year">Year</Label>
+          <Input
+            id="year"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            placeholder="e.g. 3rd Year"
+          />
+        </div>
+      </div>
+
       <ul className="flex flex-col gap-3" role="list" aria-label="Rank your choices by dragging">
         {categories.map((category, index) => (
           <li
@@ -166,7 +195,7 @@ export function RankingList() {
       </Button>
 
       <p className="text-center text-xs text-muted-foreground">
-        Drag to reorder your preferences. You can change these later.
+        Drag to reorder your event topic preferences. You can change these later.
       </p>
     </div>
   );

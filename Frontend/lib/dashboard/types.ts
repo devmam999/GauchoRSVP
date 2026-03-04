@@ -9,6 +9,13 @@ export type EventCategory =
   | "Entertainment"
   | "Sports";
 
+export const EVENT_CATEGORIES: EventCategory[] = [
+  "Social",
+  "Academic",
+  "Entertainment",
+  "Sports",
+];
+
 export type EventSubtype =
   | "Block party"
   | "Laid-back"
@@ -48,36 +55,31 @@ export interface CampusEvent {
   rsvpLink?: string;
   /** Source / info link */
   sourceLink?: string;
+  description?: string;
+  descriptionHtml?: string;
+  photoUrl?: string;
+  localistNumAttending?: number;
+  allowsAttendance?: boolean;
+  distanceMiles?: number;
+  walkMinutes?: number;
+  bikeMinutes?: number;
+  friendRsvpCount?: number;
+  friendRsvpUsernames?: string[];
+  engagementAverageRating?: number;
+  engagementReviewCount?: number;
+  targetAudience?: string[];
+  topics?: string[];
+  types?: string[];
 }
-
-export type TimeRangeFilter = "all" | "today" | "week" | "month";
 
 export interface EventFilters {
-  categories: EventCategory[];
-  foodProvided: FoodProvided | "any";
-  freeAdmissionOnly: boolean;
-  timeRange: TimeRangeFilter;
+  eventTargetAudience: string[];
+  eventTopic: string[];
+  eventTypes: string[];
+  nearestOnly?: boolean;
+  friendPriority?: boolean;
+  ratingPriority?: boolean;
 }
-
-export const TIME_RANGE_OPTIONS: { value: TimeRangeFilter; label: string }[] = [
-  { value: "all", label: "All time" },
-  { value: "today", label: "Today" },
-  { value: "week", label: "This week" },
-  { value: "month", label: "This month" },
-];
-
-export const EVENT_CATEGORIES: EventCategory[] = [
-  "Social",
-  "Academic",
-  "Entertainment",
-  "Sports",
-];
-
-export const FOOD_OPTIONS: { value: "any" | "free" | "costs-extra"; label: string }[] = [
-  { value: "any", label: "Any" },
-  { value: "free", label: "Free" },
-  { value: "costs-extra", label: "Costs extra" },
-];
 
 /** Friend type for Friends page. Replace with API type when backend is ready. */
 export interface Friend {

@@ -355,24 +355,6 @@ export default function FriendsPage() {
       return;
     }
 
-    if (payload.status === "pending") {
-      const notifyRes = await fetch(`${apiBaseUrl}/friend/notify-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requesterId: currentUserId,
-          addresseeId: profile.id,
-        }),
-      });
-      const notifyPayload = (await notifyRes.json()) as { error?: string };
-      if (!notifyRes.ok) {
-        setProfilesError(
-          notifyPayload.error ??
-            "Friend request sent, but email notification could not be delivered."
-        );
-      }
-    }
-
     await refreshFriendContext();
   };
 
@@ -409,7 +391,7 @@ export default function FriendsPage() {
           Friends
         </h1>
 
-        <section aria-label="Add friend" className="mb-8 w-full">
+        <section aria-label="Add friend" className="relative z-40 mb-8 w-full">
           <AddFriendSearch
             profiles={registeredProfiles}
             existingFriendIds={existingFriendIds}
@@ -431,7 +413,7 @@ export default function FriendsPage() {
           ) : null}
         </section>
 
-        <ScrollArea className="h-[calc(100dvh-16rem)]">
+        <ScrollArea className="relative z-10 h-[calc(100dvh-16rem)]">
           <div className="space-y-8 pb-8">
             {incomingRequests.length > 0 && (
               <section aria-label="Friend requests">

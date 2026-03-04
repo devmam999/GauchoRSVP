@@ -1,13 +1,9 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calendar, Filter, MapPin } from "lucide-react";
+import { Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CampusEvent, EventFilters, EventCategory } from "@/lib/dashboard/types";
-import { EVENT_CATEGORIES, FOOD_OPTIONS, TIME_RANGE_OPTIONS } from "@/lib/dashboard/types";
+import type { CampusEvent, EventFilters } from "@/lib/dashboard/types";
 
 export interface SidebarPanelProps {
   className?: string;
@@ -16,19 +12,12 @@ export interface SidebarPanelProps {
   /** Current filters; controlled by parent */
   filters: EventFilters;
   onFiltersChange: (f: EventFilters) => void;
-  /** Filtered events to list (from parent) */
-  events: CampusEvent[];
-  /** Optional: scroll map to event when user clicks list item */
-  onSelectEvent?: (event: CampusEvent) => void;
-}
-
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  onRequestLocation?: () => void;
+  isLocating?: boolean;
+  hasLocation?: boolean;
+  locationError?: string | null;
+  /** All loaded events, used to derive Localist filter values */
+  allEvents: CampusEvent[];
 }
 
 export function SidebarPanel({
@@ -37,15 +26,43 @@ export function SidebarPanel({
   onClose,
   filters,
   onFiltersChange,
-  events,
-  onSelectEvent,
+  onRequestLocation,
+  isLocating = false,
+  hasLocation = false,
+  locationError,
+  allEvents,
 }: SidebarPanelProps) {
-  const toggleCategory = (cat: EventCategory) => {
-    const next = filters.categories.includes(cat)
-      ? filters.categories.filter((c) => c !== cat)
-      : [...filters.categories, cat];
-    onFiltersChange({ ...filters, categories: next });
+  const targetAudienceOptions = Array.from(
+    new Set(allEvents.flatMap((event) => event.targetAudience ?? []))
+  ).sort();
+  const topicOptions = Array.from(
+    new Set(allEvents.flatMap((event) => event.topics ?? []))
+  ).sort();
+  const eventTypeOptions = Array.from(
+    new Set(allEvents.flatMap((event) => event.types ?? []))
+  ).sort();
+
+  const toggleArrayFilter = (
+    key: keyof EventFilters,
+    value: string
+  ) => {
+    const currentValues = filters[key] as string[];
+    const nextValues = currentValues.includes(value)
+      ? currentValues.filter((item) => item !== value)
+      : [...currentValues, value];
+    onFiltersChange({
+      ...filters,
+      [key]: nextValues,
+    });
   };
+
+  const chipClass = (selected: boolean) =>
+    cn(
+      "rounded-full border px-3 py-1.5 text-sm text-left transition-all duration-200 hover:scale-[1.02]",
+      selected
+        ? "border-blue-400 bg-blue-500/30 text-blue-100"
+        : "border-border/70 bg-background/50 text-foreground hover:bg-muted/70"
+    );
 
   return (
     <aside
@@ -55,7 +72,7 @@ export function SidebarPanel({
         !isOpen && "max-sm:translate-x-[-100%] max-sm:opacity-0",
         className
       )}
-      aria-label="Filters and events"
+      aria-label="Filters"
     >
       {onClose && (
         <button
@@ -79,140 +96,168 @@ export function SidebarPanel({
           <CardContent className="space-y-4">
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Type of event
+                Location
               </p>
-              <div className="flex flex-wrap gap-x-4 gap-y-2">
-                {EVENT_CATEGORIES.map((cat) => (
-                  <label
-                    key={cat}
-                    className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
-                  >
-                    <Checkbox
-                      checked={filters.categories.includes(cat)}
-                      onCheckedChange={() => toggleCategory(cat)}
-                      aria-label={`Filter by ${cat}`}
-                    />
-                    {cat}
-                  </label>
-                ))}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => onRequestLocation?.()}
+                  className="rounded-full border border-border/70 bg-background/50 px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted/70"
+                >
+                  {isLocating
+                    ? "Getting location..."
+                    : hasLocation
+                      ? "Refresh location"
+                      : "Use my location"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFiltersChange({
+                      ...filters,
+                      nearestOnly: !filters.nearestOnly,
+                    })
+                  }
+                  className={chipClass(!!filters.nearestOnly)}
+                  aria-pressed={!!filters.nearestOnly}
+                  aria-label="Show nearest events only"
+                >
+                  Show nearest events only
+                </button>
+                {locationError ? (
+                  <p className="text-xs text-destructive">{locationError}</p>
+                ) : null}
               </div>
             </div>
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Food provided
+                Smart ranking
               </p>
-              <RadioGroup
-                value={filters.foodProvided === null ? "any" : filters.foodProvided}
-                onValueChange={(value) =>
-                  onFiltersChange({
-                    ...filters,
-                    foodProvided: value as EventFilters["foodProvided"],
-                  })
-                }
-                className="flex flex-wrap gap-x-4 gap-y-2"
-              >
-                {FOOD_OPTIONS.map((opt) => (
-                  <label
-                    key={opt.value}
-                    className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
-                  >
-                    <RadioGroupItem value={opt.value} aria-label={opt.label} />
-                    {opt.label}
-                  </label>
-                ))}
-              </RadioGroup>
-            </div>
-
-            <div>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <Checkbox
-                  checked={filters.freeAdmissionOnly}
-                  onCheckedChange={(checked) =>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
                     onFiltersChange({
                       ...filters,
-                      freeAdmissionOnly: !!checked,
+                      friendPriority: !filters.friendPriority,
                     })
                   }
-                  aria-label="Free admission only"
-                />
-                Free admission only
-              </label>
+                  className={chipClass(!!filters.friendPriority)}
+                  aria-pressed={!!filters.friendPriority}
+                >
+                  Friends priority
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFiltersChange({
+                      ...filters,
+                      ratingPriority: !filters.ratingPriority,
+                    })
+                  }
+                  className={chipClass(!!filters.ratingPriority)}
+                  aria-pressed={!!filters.ratingPriority}
+                >
+                  Rating priority
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                If both are selected: {"<"}1-star gap favors friends, {">"}1-star gap favors rating.
+              </p>
             </div>
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Time range
+                Event target audience
               </p>
-              <RadioGroup
-                value={filters.timeRange}
-                onValueChange={(value) =>
-                  onFiltersChange({
-                    ...filters,
-                    timeRange: value as EventFilters["timeRange"],
-                  })
-                }
-                className="flex flex-wrap gap-x-4 gap-y-2"
-              >
-                {TIME_RANGE_OPTIONS.map((opt) => (
-                  <label
-                    key={opt.value}
-                    className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
-                  >
-                    <RadioGroupItem value={opt.value} aria-label={opt.label} />
-                    {opt.label}
-                  </label>
-                ))}
-              </RadioGroup>
+              <div className="flex flex-wrap gap-2">
+                {targetAudienceOptions.map((option) => {
+                  const selected = filters.eventTargetAudience.includes(option);
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        onFiltersChange({
+                          ...filters,
+                          eventTargetAudience: selected ? [] : [option],
+                        })
+                      }
+                      className={chipClass(selected)}
+                      aria-pressed={selected}
+                      aria-label={`Filter by ${option}`}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+                {targetAudienceOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No audience filters available.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Event topic
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {topicOptions.map((option) => {
+                  const selected = filters.eventTopic.includes(option);
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => toggleArrayFilter("eventTopic", option)}
+                      className={chipClass(selected)}
+                      aria-pressed={selected}
+                      aria-label={`Filter by ${option}`}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+                {topicOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No topic filters available.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Event types
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {eventTypeOptions.map((option) => {
+                  const selected = filters.eventTypes.includes(option);
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => toggleArrayFilter("eventTypes", option)}
+                      className={chipClass(selected)}
+                      aria-pressed={selected}
+                      aria-label={`Filter by ${option}`}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+                {eventTypeOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No event type filters available.
+                  </p>
+                ) : null}
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card flex-1 min-h-0 flex flex-col">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              Upcoming events
-              <span className="text-muted-foreground font-normal">
-                ({events.length})
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 min-h-0 p-0">
-            <ScrollArea className="h-[200px] sm:h-[240px] px-4 pb-4">
-              <ul className="space-y-2 pr-4">
-                {events.length === 0 ? (
-                  <li className="text-sm text-muted-foreground py-4">
-                    No events match the current filters.
-                  </li>
-                ) : (
-                  events.map((event) => (
-                    <li key={event.id}>
-                      <button
-                        type="button"
-                        onClick={() => onSelectEvent?.(event)}
-                        className={cn(
-                          "w-full rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        )}
-                      >
-                        <span className="font-medium text-foreground text-sm block truncate">
-                          {event.name}
-                        </span>
-                        <span className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
-                          <MapPin className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{event.location}</span>
-                        </span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {formatShortDate(event.startTime)} · {event.category}
-                        </span>
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </ScrollArea>
-          </CardContent>
-        </Card>
       </div>
     </aside>
   );
