@@ -37,7 +37,9 @@ export function SidebarPanel({
   ).sort();
   const topicOptions = Array.from(
     new Set(allEvents.flatMap((event) => event.topics ?? []))
-  ).sort();
+  )
+    .filter((option) => option.toLowerCase() !== "housing")
+    .sort();
   const eventTypeOptions = Array.from(
     new Set(allEvents.flatMap((event) => event.types ?? []))
   ).sort();

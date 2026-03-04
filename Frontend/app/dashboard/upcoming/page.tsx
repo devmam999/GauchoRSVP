@@ -376,7 +376,10 @@ export default function UpcomingEventsPage() {
     [sourceEvents]
   );
   const topicOptions = useMemo(
-    () => Array.from(new Set(sourceEvents.flatMap((event) => event.topics ?? []))).sort(),
+    () =>
+      Array.from(new Set(sourceEvents.flatMap((event) => event.topics ?? [])))
+        .filter((option) => option.toLowerCase() !== "housing")
+        .sort(),
     [sourceEvents]
   );
   const eventTypeOptions = useMemo(
