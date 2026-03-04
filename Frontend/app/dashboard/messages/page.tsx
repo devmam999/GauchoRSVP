@@ -9,7 +9,7 @@ import { ErrorNotice } from "@/components/ui/error-notice";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { ImagePlus, Send } from "lucide-react";
+import { ImagePlus, Send, Trash2 } from "lucide-react";
 
 type RegisteredUser = {
   id: string;
@@ -94,6 +94,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!apiBaseUrl || !currentUserId) return;
+    const activeUserId = currentUserId;
     let isMounted = true;
 
     async function loadBaseData() {
@@ -102,8 +103,8 @@ export default function MessagesPage() {
         setError(null);
         const [usersRes, threadsRes, blocksRes] = await Promise.all([
           fetch(`${apiBaseUrl}/friends/registered-users`),
-          fetch(`${apiBaseUrl}/message?userId=${encodeURIComponent(currentUserId)}`),
-          fetch(`${apiBaseUrl}/block?userId=${encodeURIComponent(currentUserId)}`),
+          fetch(`${apiBaseUrl}/message?userId=${encodeURIComponent(activeUserId)}`),
+          fetch(`${apiBaseUrl}/block?userId=${encodeURIComponent(activeUserId)}`),
         ]);
 
         const usersPayload = (await usersRes.json()) as {
@@ -130,7 +131,7 @@ export default function MessagesPage() {
         }
 
         if (!isMounted) return;
-        const allUsers = (usersPayload.users ?? []).filter((user) => user.id !== currentUserId);
+        const allUsers = (usersPayload.users ?? []).filter((user) => user.id !== activeUserId);
         setUsers(allUsers);
         setThreads(threadsPayload.threads ?? []);
         setBlockedIds(new Set((blocksPayload.blocked ?? []).map((entry) => entry.blockedId)));
@@ -157,14 +158,16 @@ export default function MessagesPage() {
       setMessages([]);
       return;
     }
+    const activeUserId = currentUserId;
+    const activeSelectedUserId = selectedUserId;
     let isMounted = true;
 
     async function loadConversation() {
       try {
         const res = await fetch(
           `${apiBaseUrl}/message?userId=${encodeURIComponent(
-            currentUserId
-          )}&otherUserId=${encodeURIComponent(selectedUserId)}`
+            activeUserId
+          )}&otherUserId=${encodeURIComponent(activeSelectedUserId)}`
         );
         const payload = (await res.json()) as { messages?: MessageItem[]; error?: string };
         if (!res.ok) {
@@ -198,6 +201,29 @@ export default function MessagesPage() {
   }, [messages]);
 
   const isSelectedBlocked = selectedUserId ? blockedIds.has(selectedUserId) : false;
+
+  const deleteMessage = async (messageId: string) => {
+    if (!apiBaseUrl || !currentUserId) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/deleteMsg`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId,
+          messageId,
+        }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error ?? "Could not delete message.");
+      }
+      setMessages((prev) => prev.filter((message) => message.id !== messageId));
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error ? deleteError.message : "Could not delete message.";
+      setError(message);
+    }
+  };
 
   const sendMessage = async () => {
     if (!apiBaseUrl || !currentUserId || !selectedUserId || sending) return;
@@ -378,12 +404,22 @@ export default function MessagesPage() {
                     className={`flex ${mine ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow ${
+                      className={`group relative max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow ${
                         mine
                           ? "bg-primary text-primary-foreground"
                           : "border border-border/70 bg-background/60 text-foreground"
                       }`}
                     >
+                      <button
+                        type="button"
+                        className={`absolute -top-2 ${
+                          mine ? "-left-2" : "-right-2"
+                        } rounded-full border border-border/70 bg-background/90 p-1 text-muted-foreground opacity-0 transition-opacity duration-200 hover:text-destructive group-hover:opacity-100`}
+                        onClick={() => deleteMessage(message.id)}
+                        aria-label="Delete message"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                       {message.text ? <p className="whitespace-pre-wrap">{message.text}</p> : null}
                       {message.imageUrl ? (
                         <img

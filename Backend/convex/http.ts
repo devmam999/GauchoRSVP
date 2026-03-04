@@ -183,6 +183,12 @@ http.route({
 });
 
 http.route({
+  path: "/deleteMsg",
+  method: "OPTIONS",
+  handler: httpAction(async () => optionsResponse()),
+});
+
+http.route({
   path: "/block",
   method: "OPTIONS",
   handler: httpAction(async () => optionsResponse()),
@@ -1174,6 +1180,33 @@ http.route({
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not send image message.";
+      return jsonResponse({ error: message }, 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/deleteMsg",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let body: JsonRecord;
+    try {
+      body = (await request.json()) as JsonRecord;
+    } catch {
+      return jsonResponse({ error: "Invalid JSON payload." }, 400);
+    }
+
+    const userId = parseStringField(body, "userId");
+    const messageId = parseStringField(body, "messageId");
+    if (!userId || !messageId) {
+      return jsonResponse({ error: "userId and messageId are required." }, 400);
+    }
+
+    try {
+      await ctx.runMutation(internal.auth.deleteMessage, { userId, messageId });
+      return jsonResponse({ message: "Message deleted." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not delete message.";
       return jsonResponse({ error: message }, 400);
     }
   }),

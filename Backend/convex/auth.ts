@@ -631,6 +631,26 @@ export const sendMessage = internalMutation({
   },
 });
 
+export const deleteMessage = internalMutation({
+  args: {
+    userId: v.string(),
+    messageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId as Id<"messages">);
+    if (!message) {
+      throw new Error("Message not found.");
+    }
+
+    if (message.senderId !== args.userId && message.recipientId !== args.userId) {
+      throw new Error("You can only delete your own conversation messages.");
+    }
+
+    await ctx.db.delete(message._id);
+    return { status: "deleted" as const };
+  },
+});
+
 export const listMessageThreads = internalQuery({
   args: {
     userId: v.string(),
